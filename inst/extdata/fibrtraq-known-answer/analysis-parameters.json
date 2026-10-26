@@ -1,0 +1,43 @@
+{
+  "dataset_id": "fibrtraq-known-answer-v1",
+  "dataset_type": "package-authored synthetic known-answer fixture",
+  "biological_interpretation": false,
+  "subject": "sub-example",
+  "focal_label": "focal",
+  "target_labels": ["cortex", "brainstem"],
+  "description": "known-answer",
+  "track_space": "voxel",
+  "discretization": "round",
+  "axis_flip": [false, false, false],
+  "focal_assignment_mode": "all_focal_voxels",
+  "streamline_voxelization_mode": "sample_points",
+  "target_intersection_mode": "full_streamline",
+  "endpoint_analysis": "exact_and_dilated1",
+  "endpoint_context_labels": "analysis_domain",
+  "track_reader": "stream",
+  "track_chunk_size": 4,
+  "expected_table_backend": "r",
+  "example_execution": {
+    "write_maps": true,
+    "write_report": true,
+    "write_exploratory_report": true,
+    "write_qc_viewer": true,
+    "sample_per_target": 6,
+    "progress": false
+  },
+  "expected_table_generation": {
+    "write_maps": false,
+    "write_report": false,
+    "write_exploratory_report": false,
+    "write_qc_viewer": false,
+    "progress": false
+  },
+  "generation_provenance": {
+    "generator": "data-raw/generate-known-answer-example.R",
+    "package_version": "0.3.0",
+    "r_version": "4.5.3",
+    "RNifti_version": "1.9.0",
+    "jsonlite_version": "2.0.0",
+    "devtools_version": "2.5.2"
+  }
+}

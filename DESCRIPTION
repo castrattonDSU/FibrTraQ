@@ -1,0 +1,34 @@
+Package: FibrTraQ
+Type: Package
+Title: Voxel-Resolved Focal-ROI Target Profiling of Diffusion Tractograms
+Version: 0.3.1
+Authors@R: c(
+    person("Chase", "Stratton", , "cstratton@desu.edu", role = c("aut", "cre")),
+    person("Nicholas", "Cottam", role = "aut")
+  )
+Author: Chase Stratton [aut, cre], Nicholas Cottam [aut]
+Description: Tools to compute orientation-invariant focal-voxel by target-ROI
+    association profiles from diffusion tractography. Implements the FibrTraQ
+    workflow and utilities for ROI coordinate extraction,
+    focal-voxel/streamline association counting, selectable full-streamline,
+    endpoint-voxel, and scanner-space local-search target assignment, additive
+    focal-target endpoint-pair and target-penetration audits, endpoint
+    anatomical-context quality control, ROI-level unique-streamline summaries,
+    and RSC summaries defined over focal voxels.
+License: GPL (>= 2)
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+Depends: R (>= 4.0.0)
+Imports: 
+    freesurferformats,
+    jsonlite,
+    yaml,
+    RNifti,
+    Rcpp
+LinkingTo: Rcpp
+Suggests: testthat
+URL: https://github.com/castrattonDSU/FibrTraQ
+BugReports: https://github.com/castrattonDSU/FibrTraQ/issues
+Maintainer: Chase Stratton <cstratton@desu.edu>
+Config/roxygen2/version: 8.0.0
+Config/testthat/edition: 3

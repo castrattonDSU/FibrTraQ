@@ -1,0 +1,65 @@
+.Rproj.user
+.DS_Store
+Rplots.pdf
+DESCRIPTION.bak.*
+*.bak
+*.bak.*
+*~
+#*#
+
+# HPC run outputs
+slurm-logs/
+
+# Local R package library
+.local-r-lib/
+
+# Local validation Python environment
+.venv-validation/
+
+# Development-only browser acceptance dependencies
+.github/scripts/browser-acceptance/node_modules/
+
+# Local package check/build outputs
+*.Rcheck/
+*.tar.gz
+src/*.o
+src/*.so
+src/symbols.rds
+
+# Local manuscript and release handoff artifacts
+manuscript/
+validation-runs/
+
+# Local administrative and presentation artifacts
+/*.docx
+/*_Completed/
+/deliverables/
+
+# Local study audits retained for reproducibility but not distributed or
+# published with the software package. Keep this list synchronized with the
+# corresponding exact-path exclusions in .Rbuildignore.
+inst/scripts/fibrtraq-ants-node-backtransform-audit.R
+inst/scripts/fibrtraq-biological-accuracy-validation.R
+inst/scripts/fibrtraq-dwi-native-audit-report.R
+inst/scripts/fibrtraq-dwi-native-validation.R
+inst/scripts/fibrtraq-endpoint-intersection-validation.R
+inst/scripts/fibrtraq-endpoint-package-validation.R
+inst/scripts/fibrtraq-endpoint-performance-benchmark.R
+inst/scripts/fibrtraq-gitcho-mri-compare.py
+inst/scripts/fibrtraq-gitcho-mri-pretractography.py
+inst/scripts/fibrtraq-gitcho-mri-report.R
+inst/scripts/fibrtraq-harmonized-validation.R
+inst/scripts/fibrtraq-manual-workflow-comparison.R
+inst/scripts/fibrtraq-original-trk-dwi-geometry-audit.R
+inst/scripts/fibrtraq-real-validation-trkspace-summary.R
+inst/scripts/fibrtraq-streamline-density-screenshots.R
+inst/scripts/fibrtraq-streamline-t2-overlap.R
+inst/scripts/fibrtraq-streamline-wholebrain-outside-screenshots.R
+inst/scripts/fibrtraq-streamline-wholebrain-overlap.R
+inst/scripts/fibrtraq-streamline-wholebrain-t2-overlay.R
+inst/scripts/fibrtraq-trk-nibabel-oracle.py
+inst/validation/gitcho-mri-analysis-requirements.txt
+inst/validation/gitcho-mri-pretractography-report.Rmd
+inst/validation/gitcho-mri-pretractography-validation.md
+inst/validation/manual-workflow-publication-comparison.md
+inst/validation/manual-workflow-publication-readiness-requirements.md

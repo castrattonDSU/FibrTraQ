@@ -1,0 +1,79 @@
+datasets:
+  - id: ismrm2015
+    name: ISMRM 2015 Tractography Challenge
+    evidence_status: template_only
+    role: Controlled benchmark with synthetic anatomy and public tractogram submissions.
+    urls:
+      home: https://tractometer.org/ismrm2015/home/
+      submissions: https://zenodo.org/records/840086
+    notes:
+      - Setup assets do not constitute a completed FibrTraQ release-validation result.
+      - Use downloaded challenge tractograms or locally generated tractography converted to TrackVis .trk format.
+      - Define focal and target ROIs from challenge bundle/region masks in the same voxel grid.
+      - Include known-good FibrTraQ outputs in the manifest once the first accepted run is established.
+
+  - id: tractoinferno
+    name: TractoInferno / OpenNeuro ds003900
+    evidence_status: registry_only
+    role: Real human multi-site application with T1w, dMRI derivatives, masks, and reference streamlines.
+    urls:
+      paper: https://pmc.ncbi.nlm.nih.gov/articles/PMC9700736/
+      openneuro: https://openneuro.org/datasets/ds003900
+      code: https://github.com/scil-vital/TractoInferno
+    notes:
+      - This entry records a candidate dataset; no completed FibrTraQ release-validation result is claimed.
+      - Select 3 to 5 subjects across different sites for publication validation.
+      - Convert reference streamlines to .trk if they are stored in another format.
+      - Use anatomically meaningful focal/target masks from the derivatives or registered atlas masks.
+
+  - id: dtor985
+    name: dTOR-985 normative structural connectome
+    evidence_status: completed_core_backend_benchmark
+    role: Whole-brain MNI-space exploratory utility test with one focal ROI and many atlas-defined targets.
+    urls:
+      paper: https://pmc.ncbi.nlm.nih.gov/articles/PMC11002007/
+      collection: https://springernature.figshare.com/collections/A_large_normative_connectome_for_exploring_the_tractographic_correlates_of_focal_brain_interventions/6844890
+      full_tractogram: https://springernature.figshare.com/articles/dataset/dTOR-985_structural_connectome_full_tractogram_trk_file/25209947
+      harvard_oxford_docs: https://nilearn.github.io/stable/modules/generated/nilearn.datasets.fetch_atlas_harvard_oxford.html
+    notes:
+      - The completed 2026-06-05 evidence covers R/C++ equivalence and timing for the pre-endpoint per-voxel, RSC, and fate outputs; it is not a complete biological-validation claim.
+      - Use the full .trk tractogram with track_space=trackvis so raw TrackVis points are mapped through the header affine into MNI space before voxel counting.
+      - Use execution.track_reader=stream for the full tractogram so exact counting runs in chunks instead of loading the 12 GB file into memory.
+      - Recommended focal ROI for the publication utility demonstration is left thalamus.
+      - Use the pilot manifest for coordinate/report QC, then run the full many-target manifest for exact exploratory results.
+      - Summarize full results with ftq_exploratory_report rather than relying on the standard one-map-per-target report.
+
+  - id: fibercup
+    name: FiberCup phantom
+    evidence_status: template_only
+    role: Independent phantom stress test for crossing/curving fiber geometries.
+    urls:
+      data: https://tractometer.org/fibercup/data/
+    notes:
+      - Setup assets do not constitute a completed FibrTraQ release-validation result.
+      - Use as an additional controlled benchmark after ISMRM 2015.
+      - Define small focal and target ROIs around known phantom endpoints.
+
+  - id: allen_mouse_ccf
+    name: Allen Mouse Brain CCF and Mouse Connectivity Atlas
+    evidence_status: template_only
+    role: Mouse atlas ROI framework and biological comparison source.
+    urls:
+      ccf_paper: https://pmc.ncbi.nlm.nih.gov/articles/PMC8152789/
+      connectivity_api: https://brain-map.org/support/documentation/api-allen-brain-connectivity-atlas
+    notes:
+      - Setup assets do not constitute a completed FibrTraQ release-validation result.
+      - Allen projection/tracer data are not tractograms and should not be used as direct FibrTraQ input.
+      - Use CCF-aligned mouse dMRI tractography plus Allen CCF ROI masks for a true FibrTraQ run.
+      - Use Allen projection data as external biological face-validity context.
+
+  - id: hcp_diffusion
+    name: Human Connectome Project diffusion data
+    evidence_status: registry_only
+    role: High-quality human dMRI stress test.
+    urls:
+      data: https://www.humanconnectome.org/study/hcp-young-adult/overview
+    notes:
+      - This entry records a candidate dataset; no completed FibrTraQ release-validation result is claimed.
+      - Requires access approval and additional tractography preprocessing.
+      - Best used after the controlled and open real-world validation tiers are passing.

@@ -1,0 +1,11 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# The known-answer inventory hashes file bytes, so its text assets must be
+# identical in every checkout and its TrackVis/NIfTI inputs must stay binary.
+inst/extdata/fibrtraq-known-answer/*.md text eol=lf
+inst/extdata/fibrtraq-known-answer/*.json text eol=lf
+inst/extdata/fibrtraq-known-answer/*.csv text eol=lf
+inst/extdata/fibrtraq-known-answer/expected/*.csv text eol=lf
+inst/extdata/fibrtraq-known-answer/inputs/*.nii.gz binary
+inst/extdata/fibrtraq-known-answer/inputs/*.trk binary

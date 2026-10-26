@@ -1,0 +1,37 @@
+dataset_root: /path/to/fibercup
+subject: sub-fibercup
+description: fibercup-validation
+
+tractogram: derivatives/tractography/sub-fibercup_space-vox_desc-phantom_tractogram.trk
+fnode: derivatives/rois/sub-fibercup_label-fnode_space-vox_mask.nii.gz
+local:
+
+targets:
+  endpoint_a: derivatives/rois/sub-fibercup_label-endpointA_space-vox_mask.nii.gz
+  endpoint_b: derivatives/rois/sub-fibercup_label-endpointB_space-vox_mask.nii.gz
+
+# endpoint_contexts:
+#   validated_anatomy: derivatives/rois/sub-fibercup_space-vox_desc-foreground_mask.nii.gz
+
+coordinate:
+  track_space: auto
+  discretization: any
+  axis_flip: auto
+
+analysis:
+  endpoint_analysis: exact_and_dilated1
+
+outputs:
+  derivative_name: fibrtraq-validation
+  write_maps: true
+  write_report: true
+  overwrite: false
+
+report:
+  background_image: derivatives/anat/sub-fibercup_space-vox_reference.nii.gz
+
+# Add expected outputs after the first accepted run to enable exact regression
+# checks on later reruns.
+# expected:
+#   result_csv: derivatives/fibrtraq-reference/sub-fibercup_desc-fibercup-validation_fibrtraq_per-voxel-hits.csv
+#   rsc_csv: derivatives/fibrtraq-reference/sub-fibercup_desc-fibercup-validation_fibrtraq_rsc-summary.csv

@@ -1,0 +1,6 @@
+"target","unique_target_voxels","streamline_count","target_intersection_streamlines","percent_of_target_intersections","streamline_voxelization_mode","penetration_interpretation"
+"cortex",1,1,6,16.6666666666667,"sample_points","stored-point target penetration; sparse streamline points can undercount traversed voxels"
+"cortex",2,3,6,50,"sample_points","stored-point target penetration; sparse streamline points can undercount traversed voxels"
+"cortex",3,2,6,33.3333333333333,"sample_points","stored-point target penetration; sparse streamline points can undercount traversed voxels"
+"brainstem",1,1,4,25,"sample_points","stored-point target penetration; sparse streamline points can undercount traversed voxels"
+"brainstem",2,3,4,75,"sample_points","stored-point target penetration; sparse streamline points can undercount traversed voxels"

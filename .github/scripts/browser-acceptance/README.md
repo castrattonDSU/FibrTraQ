@@ -1,0 +1,43 @@
+# Windows report browser acceptance
+
+The `Windows report browser check` workflow builds and installs the checked-out
+candidate on a native Windows runner. It uses only the package-owned synthetic
+example, copies its complete results into a folder containing spaces, `#`, `%`
+and Unicode, then opens the copied HTML directly with `file://` URLs in Chromium.
+The original outputs remain intact. No web server or external data are needed.
+
+The check verifies seven scientific tables and 18 declared values before
+testing local links, fragment targets, loaded report images, navigation from
+the index, CSV downloads, PNG opening, and actual canvas rendering during drag, edge
+roll, zoom, reset, and a layer toggle. It checks advanced path/endpoint controls
+and captures the main views and a narrow viewer. Pixel checks inspect the centre
+of the scene so a moving compass alone cannot satisfy an interaction check.
+Playwright is pinned here as a development-only dependency; it is not installed
+with the R package.
+
+CSV links must produce an actual download whose bytes match the linked file.
+For a PNG, Chromium may either download the file or display it directly. The
+check accepts a byte-matching download, or an observed navigation to the exact
+linked URL with `image/png` content type and decoded dimensions matching the
+PNG header. It records which behavior occurred and captures an opened image;
+file existence alone cannot satisfy this check.
+
+The workflow artifact contains the synthetic report folders, input manifest,
+screenshots, and `browser-evidence/browser-check.json`. Review the screenshots
+before accepting visual layout. A successful automated check establishes the
+listed browser behaviors on that recorded Windows/browser/package revision;
+it is not manual user acceptance, a real-brain Windows analysis, or anatomical
+validation. Keep those evidence items separate in the release record.
+
+For an authorized native Windows reproduction, install the intended R package
+in a fresh session, install Node.js 24, then from this directory run:
+
+```powershell
+npm ci --ignore-scripts
+npx playwright install chromium
+Rscript --vanilla generate-fixture.R "C:/fibrtraq-browser-review"
+node report-browser-check.cjs "C:/fibrtraq-browser-review/browser-fixture.json"
+```
+
+The output directory must be new. The browser script refuses non-Windows hosts
+so a different operating system cannot be mistaken for Windows evidence.

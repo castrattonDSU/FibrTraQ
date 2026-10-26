@@ -1,0 +1,37 @@
+dataset_root: /path/to/mouse-dmri-ccf
+subject: sub-mouse001
+description: allen-ccf-validation
+
+tractogram: derivatives/tractography/sub-mouse001_space-ccf_desc-wholebrain_tractogram.trk
+fnode: derivatives/rois/sub-mouse001_label-fnode_space-ccf_mask.nii.gz
+local:
+
+targets:
+  ccf_target_a: derivatives/rois/sub-mouse001_label-targetA_space-ccf_mask.nii.gz
+  ccf_target_b: derivatives/rois/sub-mouse001_label-targetB_space-ccf_mask.nii.gz
+
+# endpoint_contexts:
+#   validated_anatomy: derivatives/rois/sub-mouse_space-ccf_desc-brain_mask.nii.gz
+
+coordinate:
+  track_space: auto
+  discretization: any
+  axis_flip: auto
+
+analysis:
+  endpoint_analysis: exact_and_dilated1
+
+outputs:
+  derivative_name: fibrtraq-validation
+  write_maps: true
+  write_report: true
+  overwrite: false
+
+report:
+  background_image: derivatives/anat/sub-mouse001_space-ccf_reference.nii.gz
+
+# Add expected outputs after the first accepted run to enable exact regression
+# checks on later reruns.
+# expected:
+#   result_csv: derivatives/fibrtraq-reference/sub-mouse001_desc-allen-ccf-validation_fibrtraq_per-voxel-hits.csv
+#   rsc_csv: derivatives/fibrtraq-reference/sub-mouse001_desc-allen-ccf-validation_fibrtraq_rsc-summary.csv

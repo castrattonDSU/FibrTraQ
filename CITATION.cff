@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+message: "If you use FibrTraQ, please cite the software release and the associated manuscript when available."
+title: "FibrTraQ: Voxel-Resolved Focal-ROI Target Profiling of Diffusion Tractograms"
+version: "0.3.1"
+url: "https://github.com/castrattonDSU/FibrTraQ"
+repository-code: "https://github.com/castrattonDSU/FibrTraQ"
+license: "GPL-2.0-or-later"
+authors:
+  - family-names: "Stratton"
+    given-names: "Chase"
+    email: "cstratton@desu.edu"
+  - family-names: "Cottam"
+    given-names: "Nicholas"
+keywords:
+  - "diffusion MRI"
+  - "tractography"
+  - "focal ROI"
+  - "voxel-resolved analysis"
+  - "neuroimaging software"

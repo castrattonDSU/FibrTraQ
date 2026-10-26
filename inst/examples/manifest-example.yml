@@ -1,0 +1,50 @@
+dataset_root: /path/to/FibrTraQ-data
+subject: sub-001
+session: ses-01
+description: cerebellum
+
+tractogram: derivatives/tractography/sub-001_ses-01_space-vox_desc-wholebrain_tractogram.trk
+fnode: derivatives/rois/sub-001_ses-01_label-fnode_desc-cerebellum_space-vox_mask.nii.gz
+# Coordinate-conversion reference. This may be the same file used as the
+# report background, but the two fields have different roles.
+ref_image: derivatives/anat/sub-001_ses-01_space-vox_T1w.nii.gz
+local:
+
+targets:
+  IPT: derivatives/rois/sub-001_ses-01_label-IPT_space-vox_mask.nii.gz
+  MPT: derivatives/rois/sub-001_ses-01_label-MPT_space-vox_mask.nii.gz
+  SPT: derivatives/rois/sub-001_ses-01_label-SPT_space-vox_mask.nii.gz
+
+coordinate:
+  track_space: auto
+  discretization: any
+  axis_flip: auto
+
+analysis:
+  focal_assignment_mode: all_focal_voxels
+  streamline_voxelization_mode: sample_points
+  target_intersection_mode: full_streamline
+  # Inclusive scanner-space radius used only by target_intersection_mode: local_search.
+  local_search_radius_mm: 2
+
+outputs:
+  derivative_name: fibrtraq-v0.3.0
+  write_maps: true
+  write_report: true
+  overwrite: false
+
+report:
+  # Recommended for visual QC, but optional. Must share the fNode voxel grid
+  # when supplied. If omitted, reports can generate exact tractogram-derived
+  # density context from .trk inputs; this is not anatomical brain volume.
+  background_image: derivatives/anat/sub-001_ses-01_space-vox_T1w.nii.gz
+  context_source: auto
+  tractogram_context:
+    density_discretization: round
+
+expected:
+  # Optional known-good outputs used for regression validation.
+  result_csv: derivatives/fibrtraq-reference/sub-001_ses-01_desc-cerebellum_fibrtraq_per-voxel-hits.csv
+  rsc_csv: derivatives/fibrtraq-reference/sub-001_ses-01_desc-cerebellum_fibrtraq_rsc-summary.csv
+  maps:
+    tracks: derivatives/fibrtraq-reference/maps/sub-001_ses-01_desc-cerebellum_fibrtraq_per-voxel-hits_tracks.nii.gz

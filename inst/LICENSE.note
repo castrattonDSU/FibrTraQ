@@ -1,0 +1,21 @@
+FibrTraQ
+Copyright (C) 2025-2026 Chase Stratton and Nicholas Cottam
+SPDX-License-Identifier: GPL-2.0-or-later
+
+FibrTraQ is free software: you can redistribute it and/or modify it
+under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 2 of the License, or
+(at your option) any later version.
+
+FibrTraQ is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU General Public License for more details.
+
+The complete GPL version 2 text is included in the repository's LICENSE.md
+and in the R distribution at share/licenses/GPL-2. It is also available at
+https://www.R-project.org/Licenses/GPL-2.
+
+This license applies to FibrTraQ's original code and package-authored
+synthetic fixture. Third-party dependencies retain their own licenses.
+Copies previously distributed under MIT retain their original terms.

@@ -1,0 +1,12 @@
+{
+  "name": "fibrtraq-report-browser-acceptance",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Development-only native Windows report acceptance checks",
+  "scripts": {
+    "check": "node report-browser-check.cjs"
+  },
+  "devDependencies": {
+    "playwright": "1.64.1"
+  }
+}
