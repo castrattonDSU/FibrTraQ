@@ -116,7 +116,7 @@ jobs:
             tlmgr <- unname(Sys.which(launcher))
             if (!nzchar(tlmgr)) stop("TinyTeX launcher was not found: ", launcher)
             status <- system2(tlmgr,
-              c("--repository", "https://mirrors.ctan.org/systems/texlive/tlnet", "install", needed),
+              c("--repository", "https://ctan.math.illinois.edu/systems/texlive/tlnet", "install", needed),
               timeout = 300)
             if (!identical(status, 0L)) stop("Targeted manual prerequisite installation failed: ",
                                            paste(needed, collapse = ", "))
