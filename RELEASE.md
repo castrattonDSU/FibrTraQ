@@ -1,9 +1,11 @@
 # FibrTraQ release review
 
-The prepared R package version is **0.3.1**, licensed under
-**GPL-2.0-or-later**. Its proposed research-preview tag is **v0.3.1-rc1**. This
-document is a checklist, not evidence that the tag or release exists or that
-the candidate has passed every gate below.
+This document preserves the **0.3.1 research-preview checklist**. For the
+active **0.3.3 CRAN submission candidate**, follow [CRAN preparation](CRAN.md).
+
+The checklist below was prepared for R package version **0.3.1**, licensed
+under **GPL-2.0-or-later**, with the proposed tag **v0.3.1-rc1**. It is not
+evidence that a tag or release exists or that a candidate passed every gate.
 
 The preceding tagged candidate, **v0.3.0-rc2**, contains package version
 **0.3.0** under its original MIT license. Preserve it unchanged. Do not

@@ -361,18 +361,17 @@ test_that("standard report forwards the saved fraction validity map to its plot"
 
 test_that("the fraction overlay draws defined zeros without coloring missing values", {
   layers <- list()
-  testthat::local_mocked_bindings(
-    image = function(x, y, z, ...) {
+  draw_overlay <- ftq_test_function_copy(FibrTraQ:::ftq_draw_overlay_slice, exports = list(
+    `graphics::image` = function(x, y, z, ...) {
       layers[[length(layers) + 1L]] <<- z
-    }, box = function(...) NULL, .package = "graphics"
-  )
+    }, `graphics::box` = function(...) NULL
+  ))
   values <- matrix(c(0, NA, 0.5, -1), 2L)
-  FibrTraQ:::ftq_draw_overlay_slice(values, 1:2, 1:2, c(0, 1), c("blue", "red"),
-                                   "fraction", show_zeros = TRUE)
+  draw_overlay(values, 1:2, 1:2, c(0, 1), c("blue", "red"), "fraction", show_zeros = TRUE)
   expect_length(layers, 2L)
   expect_equal(as.numeric(layers[[2L]]), c(0, NA, 0.5, NA))
   layers <- list()
-  FibrTraQ:::ftq_draw_overlay_slice(values, 1:2, 1:2, c(0, 1), c("blue", "red"), "counts")
+  draw_overlay(values, 1:2, 1:2, c(0, 1), c("blue", "red"), "counts")
   expect_equal(as.numeric(layers[[2L]]), c(NA, NA, 0.5, NA))
 })
 

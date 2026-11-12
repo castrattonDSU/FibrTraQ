@@ -5,15 +5,15 @@
 \alias{FibrTraQ-package}
 \title{FibrTraQ}
 \description{
-Voxel-resolved focal-ROI target profiling of diffusion tractograms.
+Voxel-resolved focal-region target profiling from TrackVis (\code{.trk}) or
+MRtrix (\code{.tck}) diffusion tractograms and aligned NIfTI masks. Both formats
+support the same summaries, density maps, HTML reports and interactive
+three-dimensional quality-control viewer. Spatial alignment must be
+independently verified before interpreting results.
 }
 \seealso{
-Useful links:
-\itemize{
-  \item \url{https://github.com/castrattonDSU/FibrTraQ}
-  \item Report bugs at \url{https://github.com/castrattonDSU/FibrTraQ/issues}
-}
-
+\code{\link[=ftq_run_example]{ftq_run_example()}} for a bundled known-answer example and
+\code{\link[=ftq_run_files]{ftq_run_files()}} for analysis of existing input files.
 }
 \author{
 \strong{Maintainer}: Chase Stratton \email{cstratton@desu.edu}

@@ -17,6 +17,8 @@
 ^CODE_OF_CONDUCT\.md$
 ^CONTRIBUTING\.md$
 ^RELEASE\.md$
+^CRAN\.md$
+^cran-comments\.md$
 ^SUPPORT\.md$
 ^.*\.Rcheck$
 ^.*\.tar\.gz$

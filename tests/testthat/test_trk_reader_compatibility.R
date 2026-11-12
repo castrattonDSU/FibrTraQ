@@ -3,17 +3,19 @@ test_that("TRK memory import accepts the legacy reader signature", {
   records <- list(list(num_points = 2L, coords = rbind(c(1, 2, 3), c(4, 5, 6))))
   expected <- list(header = list(id_string = "TRACK"), tracks = records)
   called <- FALSE
-  testthat::local_mocked_bindings(
-    read.dti.trk = function(filepath, shift_origin = TRUE) {
+  original_reader <- freesurferformats::read.dti.trk
+  reader <- ftq_test_function_copy(ftq_read_tractogram, exports = list(
+    `freesurferformats::read.dti.trk` = function(filepath, shift_origin = TRUE) {
       expect_identical(filepath, path)
       expect_true(shift_origin)
       called <<- TRUE
       expected
-    }, .package = "freesurferformats"
-  )
-  expect_no_warning(actual <- ftq_read_tractogram(path, "memory"))
+    }
+  ))
+  expect_no_warning(actual <- reader(path, "memory"))
   expect_true(called)
   expect_identical(actual, expected)
+  expect_identical(freesurferformats::read.dti.trk, original_reader)
 })
 
 test_that("TRK memory import requests native coordinates without hiding warnings", {
@@ -21,17 +23,19 @@ test_that("TRK memory import requests native coordinates without hiding warnings
   records <- list(list(num_points = 2L, coords = rbind(c(1, 2, 3), c(4, 5, 6))))
   expected <- list(header = list(id_string = "TRACK"), tracks = records)
   seen_coords <- NULL
-  testthat::local_mocked_bindings(
-    read.dti.trk = function(filepath, shift_origin = TRUE, coords = NULL) {
+  original_reader <- freesurferformats::read.dti.trk
+  reader <- ftq_test_function_copy(ftq_read_tractogram, exports = list(
+    `freesurferformats::read.dti.trk` = function(filepath, shift_origin = TRUE, coords = NULL) {
       seen_coords <<- coords
       warning("independent import warning", call. = FALSE)
       expected
-    }, .package = "freesurferformats"
-  )
-  expect_warning(actual <- ftq_read_tractogram(path, "memory"),
+    }
+  ))
+  expect_warning(actual <- reader(path, "memory"),
                  "independent import warning")
   expect_identical(seen_coords, "native")
   expect_identical(actual, expected)
+  expect_identical(freesurferformats::read.dti.trk, original_reader)
 })
 
 test_that("TRK memory import preserves stored coordinates and normalizes containers", {

@@ -30,6 +30,10 @@ remotes::install_github(
 )
 ```
 
+CRAN submission is being prepared. FibrTraQ is not yet available through
+`install.packages("FibrTraQ")`; use the GitHub installation above until a
+CRAN release is announced.
+
 <a id="2-verify-the-installation"></a>
 
 Below is a supplementary basic example for observing the logic of the package. 

@@ -15,28 +15,27 @@ ftq_public_endpoint_plot_summary <- function() {
   )
 }
 
-ftq_public_endpoint_plot_capture <- function(env = parent.frame()) {
+ftq_public_endpoint_plot_capture <- function() {
   captured <- new.env(parent = emptyenv())
   captured$bars <- list()
   captured$labels <- character()
   captured$notes <- character()
   captured$target_labels <- list()
   captured$target_angles <- integer()
-  original_barplot <- graphics::barplot
   original_axis <- graphics::axis
   original_text <- graphics::text
   original_mtext <- graphics::mtext
-  testthat::local_mocked_bindings(
-    barplot = function(height, ...) {
+  exports <- list(
+    `graphics::barplot` = function(height, ...) {
       captured$bars[[length(captured$bars) + 1L]] <- height
       args <- list(...)
       if (!is.null(args$names.arg)) {
         captured$target_labels[[length(captured$target_labels) + 1L]] <- args$names.arg
         captured$target_angles <- c(captured$target_angles, args$las)
       }
-      original_barplot(height, ...)
+      draw_bars(height, ...)
     },
-    axis = function(side, ...) {
+    `graphics::axis` = function(side, ...) {
       args <- list(...)
       if (side == 1 && !is.null(args$labels)) {
         captured$target_labels[[length(captured$target_labels) + 1L]] <- args$labels
@@ -44,15 +43,31 @@ ftq_public_endpoint_plot_capture <- function(env = parent.frame()) {
       }
       original_axis(side, ...)
     },
-    text = function(x, y, labels, ...) {
+    `graphics::text` = function(x, y, labels, ...) {
       captured$labels <- c(captured$labels, rep_len(as.character(labels), max(length(x), length(y))))
       original_text(x, y, labels, ...)
     },
-    mtext = function(text, ...) {
+    `graphics::mtext` = function(text, ...) {
       captured$notes <- c(captured$notes, as.character(text))
       original_mtext(text, ...)
-    },
-    .package = "graphics", .env = env
+    }
+  )
+  # These plots supply numeric matrices. Instrument the real default renderer
+  # as well, retaining coverage of its axis labels without changing graphics.
+  draw_bars <- ftq_test_function_copy(graphics::barplot.default, bindings = list(
+    axis = exports[["graphics::axis"]]
+  ))
+  bindings <- list(ftq_endpoint_plot_availability_note = ftq_test_function_copy(
+    FibrTraQ:::ftq_endpoint_plot_availability_note, exports
+  ))
+  captured$classification <- ftq_test_function_copy(
+    FibrTraQ:::ftq_plot_endpoint_classification, exports, bindings
+  )
+  captured$comparison <- ftq_test_function_copy(
+    FibrTraQ:::ftq_plot_endpoint_comparison, exports, bindings
+  )
+  captured$penetration <- ftq_test_function_copy(
+    FibrTraQ:::ftq_plot_endpoint_penetration, exports, bindings
   )
   captured
 }
@@ -63,7 +78,7 @@ test_that("endpoint classification draws unavailable columns as NA, not zero per
   original <- source
   path <- tempfile("endpoint-classification-", fileext = ".png")
   on.exit(unlink(path), add = TRUE)
-  expect_silent(FibrTraQ:::ftq_plot_endpoint_classification(source, path))
+  expect_silent(captured$classification(source, path))
   expect_true(file.exists(path) && file.info(path)$size > 0)
   expect_equal(unname(captured$bars[[1L]][, 1L]), c(25, 25, 0, 25, 25))
   expect_true(all(is.na(captured$bars[[1L]][, 2L])))
@@ -78,7 +93,7 @@ test_that("comparison retains geometric percentages and distinguishes each panel
   original <- source
   path <- tempfile("endpoint-comparison-", fileext = ".png")
   on.exit(unlink(path), add = TRUE)
-  expect_silent(FibrTraQ:::ftq_plot_endpoint_comparison(source, path))
+  expect_silent(captured$comparison(source, path))
   expect_true(file.exists(path) && file.info(path)$size > 0)
   # Geometric percentages remain 50/75, rather than classification's 25/50.
   expect_equal(unname(captured$bars[[1L]][, 1L]), c(50, 75))
@@ -101,7 +116,7 @@ test_that("all-undefined endpoint comparison remains a usable figure without war
   original <- source
   path <- tempfile("endpoint-comparison-empty-", fileext = ".png")
   on.exit(unlink(path), add = TRUE)
-  expect_silent(FibrTraQ:::ftq_plot_endpoint_comparison(source, path))
+  expect_silent(captured$comparison(source, path))
   expect_true(file.exists(path) && file.info(path)$size > 0)
   expect_true(all(vapply(captured$bars, function(x) all(is.na(x)), logical(1))))
   expect_equal(sum(captured$labels == "NA"), 8L)
@@ -121,7 +136,7 @@ test_that("penetration plots keep defined zero bins and mark absent intersection
   original <- source
   path <- tempfile("endpoint-penetration-", fileext = ".png")
   on.exit(unlink(path), add = TRUE)
-  expect_silent(FibrTraQ:::ftq_plot_endpoint_penetration(source, path))
+  expect_silent(captured$penetration(source, path))
   expect_true(file.exists(path) && file.info(path)$size > 0)
   expect_equal(unname(captured$bars[[1L]][, 1L]), c(25, 0, 25, 0, 50))
   expect_true(all(is.na(captured$bars[[1L]][, 2L])))
@@ -147,9 +162,9 @@ test_that("all endpoint figures retain complete long target identities in readab
   original_penetration <- penetration
   paths <- vapply(seq_len(3L), function(i) tempfile(fileext = ".png"), character(1L))
   on.exit(unlink(paths), add = TRUE)
-  expect_silent(ftq_plot_endpoint_classification(summary, paths[[1L]]))
-  expect_silent(ftq_plot_endpoint_comparison(summary, paths[[2L]]))
-  expect_silent(ftq_plot_endpoint_penetration(penetration, paths[[3L]]))
+  expect_silent(captured$classification(summary, paths[[1L]]))
+  expect_silent(captured$comparison(summary, paths[[2L]]))
+  expect_silent(captured$penetration(penetration, paths[[3L]]))
   expect_true(length(captured$target_labels) >= 4L)
   for (labels in captured$target_labels) {
     expect_identical(unname(gsub("\n", "", labels, fixed = TRUE)), targets)
@@ -169,7 +184,7 @@ test_that("an unbroken long target name cannot exceed the endpoint figure margin
   original <- source
   path <- tempfile("endpoint-long-token-", fileext = ".png")
   on.exit(unlink(path), add = TRUE)
-  expect_silent(ftq_plot_endpoint_comparison(source, path))
+  expect_silent(captured$comparison(source, path))
   expect_true(file.exists(path) && file.info(path)$size > 0)
   for (labels in captured$target_labels) {
     expect_identical(unname(gsub("\n", "", labels, fixed = TRUE)), targets)

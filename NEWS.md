@@ -1,6 +1,13 @@
 # FibrTraQ changes
 
-## 0.3.2.9000 (in development)
+## 0.3.3 (submission candidate; unreleased)
+
+- Clarified supported tractogram formats, outputs and spatial-verification
+  requirements in the package description for the first CRAN submission.
+- Declared optional plotting/development dependencies used by the installed
+  public-data validation scripts and the minimum testing-library version.
+- Isolated reader and figure-capture test substitutes from other packages'
+  namespaces, preserving the scientific regression assertions.
 
 - Added native MRtrix `.tck` inputs to the existing file, manifest and regional
   workflows, including streamed and in-memory reading of single-file

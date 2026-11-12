@@ -1,0 +1,133 @@
+name: CRAN readiness
+
+"on":
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  MAKEFLAGS: -j2
+  OMP_NUM_THREADS: 2
+
+jobs:
+  build-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+          Ncpus: 2
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        env:
+          GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          extra-packages: any::digest
+          needs: check
+      - name: Build the source archive with current R-release
+        shell: Rscript {0}
+        run: |
+          source <- normalizePath(Sys.getenv("GITHUB_WORKSPACE"), winslash = "/")
+          destination <- file.path(Sys.getenv("RUNNER_TEMP"), "ftq-cran-source")
+          dir.create(destination, recursive = TRUE)
+          setwd(destination)
+          status <- system2(file.path(R.home("bin"), "R"),
+                            c("CMD", "build", shQuote(source)),
+                            stdout = "build.log", stderr = "build.log")
+          cat(readLines("build.log", warn = FALSE), sep = "\n")
+          stopifnot(status == 0L)
+          package <- read.dcf(file.path(source, "DESCRIPTION"))
+          archive <- paste0(package[1L, "Package"], "_", package[1L, "Version"], ".tar.gz")
+          stopifnot(file.exists(archive))
+          metadata <- c(
+            Package = package[1L, "Package"],
+            Version = package[1L, "Version"],
+            Archive = archive,
+            SHA256 = digest::digest(archive, algo = "sha256", file = TRUE),
+            SourceCommit = Sys.getenv("GITHUB_SHA"),
+            BuiltWith = R.version.string,
+            BuiltAtUTC = format(Sys.time(), tz = "UTC", usetz = TRUE)
+          )
+          write.dcf(as.data.frame(as.list(metadata)), "source.dcf")
+          cat(readLines("source.dcf"), sep = "\n")
+          writeLines(utils::untar(archive, list = TRUE), "archive-inventory.txt")
+          capture.output(sessionInfo(), file = "build-session-info.txt")
+      - name: Retain the exact source archive and build evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: cran-source-${{ github.sha }}
+          path: ${{ runner.temp }}/ftq-cran-source
+          retention-days: 30
+          if-no-files-found: error
+
+  check-source:
+    needs: build-source
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: devel
+          use-public-rspm: true
+          Ncpus: 2
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        env:
+          GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          extra-packages: any::rcmdcheck
+          needs: check
+      - uses: r-lib/actions/setup-tinytex@v2
+      - name: Install the reference manual fonts
+        shell: bash
+        run: |
+          tlmgr update --self
+          tlmgr install collection-fontsrecommended inconsolata
+      - uses: actions/download-artifact@v7
+        with:
+          name: cran-source-${{ github.sha }}
+          path: ${{ runner.temp }}/ftq-cran-source
+      - name: Verify and check the release-built archive with R-devel
+        shell: Rscript {0}
+        run: |
+          source <- file.path(Sys.getenv("RUNNER_TEMP"), "ftq-cran-source")
+          evidence <- file.path(Sys.getenv("RUNNER_TEMP"), "ftq-cran-check")
+          dir.create(evidence, recursive = TRUE)
+          metadata <- read.dcf(file.path(source, "source.dcf"))
+          archive <- file.path(source, metadata[1L, "Archive"])
+          stopifnot(identical(unname(metadata[1L, "SourceCommit"]), Sys.getenv("GITHUB_SHA")))
+          stopifnot(identical(unname(metadata[1L, "SHA256"]),
+                              digest::digest(archive, algo = "sha256", file = TRUE)))
+          file.copy(file.path(source, "source.dcf"), evidence)
+          capture.output(sessionInfo(), file = file.path(evidence, "check-session-info.txt"))
+          result <- rcmdcheck::rcmdcheck(
+            archive, args = "--as-cran", check_dir = evidence,
+            timeout = 1800, error_on = "never",
+            env = c(NOT_CRAN = "false", `_R_CHECK_FORCE_SUGGESTS_` = "true",
+                    `_R_CHECK_CRAN_INCOMING_` = "true",
+                    `_R_CHECK_CRAN_INCOMING_REMOTE_` = "true",
+                    `_R_CHECK_SYSTEM_CLOCK_` = "true")
+          )
+          capture.output(print(result, test_output = TRUE),
+                         file = file.path(evidence, "check-summary.txt"))
+          print(result, test_output = TRUE)
+          # Keep every NOTE for maintainer review; fail the job on warnings or errors.
+          if (length(result$errors) || length(result$warnings)) {
+            stop("CRAN readiness check has errors or warnings; inspect the retained evidence.")
+          }
+      - name: Retain all check logs and the generated reference manual
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: cran-check-${{ matrix.os }}-${{ github.sha }}
+          path: ${{ runner.temp }}/ftq-cran-check
+          retention-days: 30
+          if-no-files-found: warn
