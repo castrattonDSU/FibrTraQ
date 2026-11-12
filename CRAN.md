@@ -27,8 +27,11 @@ The [CRAN readiness workflow](.github/workflows/cran-readiness.yaml) builds one
 source archive with current R-release, then checks that same archive with
 `R CMD check --as-cran` under R-devel on Linux and Windows. The PDF reference
 manual is included in those checks. Both check jobs verify the archive's
-SHA-256 checksum and source commit before running it. Errors and warnings fail
-the job; every NOTE remains available for individual review. Incoming-package,
+SHA-256 checksum and source commit before running it. The check must exit
+successfully, finish its log, and complete the tests and PDF/HTML manual checks.
+An incomplete check fails even if its parsed error and warning counts are zero.
+Errors and warnings also fail the job; every NOTE remains available for
+individual review. Incoming-package,
 remote-resource and system-clock checks remain enabled, all suggested packages
 are required, and tests run with `NOT_CRAN=false`.
 

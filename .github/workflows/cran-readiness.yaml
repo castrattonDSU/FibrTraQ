@@ -87,19 +87,33 @@ jobs:
           needs: check
       - uses: r-lib/actions/setup-pandoc@v2
       - uses: r-lib/actions/setup-tinytex@v2
-      - name: Verify the bundled reference manual tools
+      - name: Verify the reference manual tools and fonts
         shell: Rscript {0}
         run: |
           pdflatex <- unname(Sys.which("pdflatex"))
           kpsewhich <- unname(Sys.which("kpsewhich"))
           if (!nzchar(pdflatex) || !nzchar(kpsewhich)) stop("TinyTeX PDF tools were not found")
           stopifnot(identical(system2(pdflatex, "--version"), 0L))
-          for (font in c("inconsolata.sty", "times.sty")) {
-            path <- system2(kpsewhich, font, stdout = TRUE)
-            status <- attr(path, "status")
-            if ((!is.null(status) && status != 0L) || !length(path) || !any(nzchar(path))) {
-              stop("Required reference manual font was not found: ", font)
-            }
+          locate_font <- function(font) {
+            output <- tempfile("font-path-")
+            on.exit(unlink(output))
+            status <- system2(kpsewhich, font, stdout = output, stderr = output)
+            if (!identical(status, 0L)) return(character())
+            path <- readLines(output, warn = FALSE)
+            path[nzchar(path)]
+          }
+          if (!length(locate_font("pcrr8t.tfm"))) {
+            launcher <- if (.Platform$OS.type == "windows") "tlmgr.bat" else "tlmgr"
+            tlmgr <- unname(Sys.which(launcher))
+            if (!nzchar(tlmgr)) stop("TinyTeX launcher was not found: ", launcher)
+            status <- system2(tlmgr,
+              c("--repository", "https://mirrors.ctan.org/systems/texlive/tlnet", "install", "courier"),
+              timeout = 300)
+            if (!identical(status, 0L)) stop("Targeted Courier font installation failed")
+          }
+          for (font in c("inconsolata.sty", "times.sty", "pcrr8t.tfm")) {
+            path <- locate_font(font)
+            if (!length(path)) stop("Required reference manual font was not found: ", font)
             cat(font, ": ", path, "\n", sep = "")
           }
       - name: Build the pinned HTML manual validator
@@ -161,11 +175,40 @@ jobs:
             env = c(NOT_CRAN = "false", `_R_CHECK_FORCE_SUGGESTS_` = "true",
                     `_R_CHECK_CRAN_INCOMING_` = "true",
                     `_R_CHECK_CRAN_INCOMING_REMOTE_` = "true",
+                    `_R_CHECK_RD_VALIDATE_RD2HTML_` = "true",
                     `_R_CHECK_SYSTEM_CLOCK_` = "true")
           )
           capture.output(print(result, test_output = TRUE),
                          file = file.path(evidence, "check-summary.txt"))
+          writeLines(as.character(result$stdout), file.path(evidence, "check-stdout.txt"))
+          writeLines(as.character(result$stderr), file.path(evidence, "check-stderr.txt"))
           print(result, test_output = TRUE)
+          # Early process failures can leave no parsed ERROR entry in rcmdcheck.
+          # Require successful exit and completed test/manual checks independently.
+          check_log <- file.path(evidence, paste0(metadata[1L, "Package"], ".Rcheck"), "00check.log")
+          lines <- if (file.exists(check_log)) trimws(readLines(check_log, warn = FALSE)) else character()
+          completion_checks <- function(result, lines) {
+            stage_ok <- function(stage) {
+              pattern <- paste0("^\\* checking ", stage, " \\.\\.\\.( \\[[^]]+\\])? OK$")
+              any(grepl(pattern, lines, perl = TRUE))
+            }
+            c(ProcessSucceeded = identical(result$status, 0L),
+              NoTimeout = !isTRUE(result$timeout),
+              CheckFinished = identical(tail(grep("^\\* ", lines, value = TRUE), 1L), "* DONE"),
+              TestsPassed = stage_ok("tests"),
+              PDFManualPassed = stage_ok("PDF version of manual"),
+              HTMLManualPassed = stage_ok("HTML version of manual") &&
+                !any(grepl("Skipping checking HTML validation", lines, fixed = TRUE)))
+          }
+          completed <- completion_checks(result, lines)
+          status <- if (length(result$status) == 1L) as.character(result$status) else "missing"
+          write.dcf(as.data.frame(c(list(ProcessExitStatus = status), as.list(completed))),
+                    file.path(evidence, "check-completion.dcf"))
+          if (!all(completed)) {
+            stop("CRAN readiness check did not complete successfully: ",
+                 paste(names(completed)[!completed], collapse = ", "),
+                 ". Inspect the full check logs and process exit status.")
+          }
           # Keep every NOTE for maintainer review; fail the job on warnings or errors.
           if (length(result$errors) || length(result$warnings)) {
             stop("CRAN readiness check has errors or warnings; inspect the retained evidence.")
