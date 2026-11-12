@@ -21,6 +21,12 @@ of the scene so a moving compass alone cannot satisfy an interaction check.
 Playwright is pinned here as a development-only dependency; it is not installed
 with the R package.
 
+The image check opens report sections containing figures and scrolls each image
+into view before requiring successful decoding. This covers Chromium's deferred
+loading of collapsed content while still rejecting missing or corrupt images.
+The evidence records initial and decoded image states and an expanded Results
+screenshot so the advanced figures can also be inspected.
+
 CSV links must produce an actual download whose bytes match the linked file.
 For a PNG, Chromium may either download the file or display it directly. The
 check accepts a byte-matching download, or an observed navigation to the exact

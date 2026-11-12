@@ -22,7 +22,7 @@ const result = {
   package_version: manifest.package_version,
   source_commit: manifest.source_commit,
   fixture: manifest.fixture,
-  checks: [], pages: [], downloads: [], screenshots: [], page_errors: [],
+  checks: [], pages: [], downloads: [], screenshots: [], page_errors: [], image_loading: [],
   scope: "Synthetic reports in native Windows Chromium; manual and real-brain review remain separate."
 };
 let browser, context, page;
@@ -57,6 +57,38 @@ async function screenshot(name, fullPage = false) {
   const filename = `${name}.png`;
   await page.screenshot({path: path.join(evidenceDir, filename), fullPage});
   result.screenshots.push(filename);
+}
+async function exposeReportImages(relative) {
+  const initiallyUnloaded = await page.locator("img").evaluateAll(images => images
+    .filter(image => !image.complete || image.naturalWidth === 0)
+    .map(image => ({url: image.src, complete: image.complete,
+      inside_closed_details: Boolean(image.closest("details:not([open])"))})));
+  // Chromium can defer images inside collapsed details. Exercise the same
+  // disclosure and scrolling actions a reader uses before requiring decoding.
+  // The assertions below still reject missing, corrupt or incorrectly linked images.
+  const disclosures = page.locator("details");
+  let expanded = 0;
+  for (let i = 0; i < await disclosures.count(); i++) {
+    const section = disclosures.nth(i);
+    if (await section.locator("img").count() > 0 &&
+        !await section.evaluate(element => element.open)) {
+      await section.locator(":scope > summary").click();
+      expanded++;
+    }
+  }
+  const images = page.locator("img");
+  for (let i = 0; i < await images.count(); i++) {
+    await images.nth(i).scrollIntoViewIfNeeded();
+  }
+  await page.waitForFunction(() => [...document.images].every(image => image.complete));
+  const decoded = await images.evaluateAll(elements => elements.map(image => ({
+    url: image.src, complete: image.complete,
+    natural_width: image.naturalWidth, natural_height: image.naturalHeight
+  })));
+  result.image_loading.push({relative_path: relative, initially_unloaded: initiallyUnloaded,
+    expanded_sections: expanded, decoded});
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await settled();
 }
 async function observeFileClick(link, targetURL, allowImageNavigation) {
   const startingURL = page.url();
@@ -164,6 +196,7 @@ async function projectedSceneBounds() {
     for (const [i, relative] of manifest.html_files.entries()) {
       const url = pathToFileURL(path.join(root, relative)).href;
       await open(url);
+      await exposeReportImages(relative);
       const content = await page.evaluate(() => ({
         title: document.title,
         ids: [...document.querySelectorAll("[id]")].map(element => element.id),
@@ -173,7 +206,8 @@ async function projectedSceneBounds() {
           loaded: element.complete && element.naturalWidth > 0 && element.naturalHeight > 0}))
       }));
       check(Boolean(content.title.trim()), `HTML title is present: ${relative}`);
-      check(content.images.every(image => image.loaded), `Every report image loaded: ${relative}`);
+      check(content.images.every(image => image.loaded), `Every report image loaded: ${relative}`,
+        content.images.filter(image => !image.loaded));
       ids.set(url, new Set([...content.ids, ...content.names]));
       for (const link of content.links) {
         check(!link.raw.includes("\\"), `HTML link uses URL separators: ${relative}`);
@@ -190,6 +224,7 @@ async function projectedSceneBounds() {
       // Retain a viewport for long guides; the four primary views also get
       // complete screenshots below. Existence alone is not visual approval.
       await screenshot(`page-${String(i + 1).padStart(2, "0")}`);
+      if (relative === manifest.reports.results) await screenshot("results-expanded", true);
     }
     for (const link of localLinks) {
       const target = new URL(link.url);

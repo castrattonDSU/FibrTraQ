@@ -55,7 +55,10 @@ run_tck_example <- function() {
     on.exit(close(con), add = TRUE)
     writeBin(c(header, raw(offset - length(header))), con)
     for (track in tracks) {
-      writeBin(as.numeric(t(track$coords - 1)), con, size = 4L, endian = "little")
+      # freesurferformats versions return either coordinate matrices or
+      # list records. Normalize the representation without changing points.
+      coords <- as_track(track)$coords
+      writeBin(as.numeric(t(coords - 1)), con, size = 4L, endian = "little")
       writeBin(rep(NaN, 3L), con, size = 4L, endian = "little")
     }
     writeBin(rep(Inf, 3L), con, size = 4L, endian = "little")
