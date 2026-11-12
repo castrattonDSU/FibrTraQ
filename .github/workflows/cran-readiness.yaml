@@ -85,6 +85,7 @@ jobs:
         with:
           extra-packages: any::rcmdcheck
           needs: check
+      - uses: r-lib/actions/setup-pandoc@v2
       - uses: r-lib/actions/setup-tinytex@v2
       - name: Install the reference manual fonts
         shell: Rscript {0}
@@ -98,6 +99,36 @@ jobs:
             status <- system2(tlmgr, args)
             if (!identical(status, 0L)) stop("TinyTeX command failed: ", paste(args, collapse = " "))
           }
+      - name: Build the pinned HTML manual validator
+        shell: Rscript {0}
+        run: |
+          root <- file.path(Sys.getenv("RUNNER_TEMP"), "ftq-tidy")
+          dir.create(root, recursive = TRUE)
+          archive <- file.path(root, "tidy-html5-5.8.0.tar.gz")
+          download.file("https://github.com/htacg/tidy-html5/archive/refs/tags/5.8.0.tar.gz",
+                        archive, mode = "wb", quiet = TRUE)
+          expected <- "59c86d5b2e452f63c5cdb29c866a12a4c55b1741d7025cf2f3ce0cde99b0660e"
+          stopifnot(identical(digest::digest(archive, algo = "sha256", file = TRUE), expected))
+          utils::untar(archive, exdir = root)
+          source <- file.path(root, "tidy-html5-5.8.0")
+          build <- file.path(root, "build")
+          cmake <- unname(Sys.which("cmake"))
+          if (!nzchar(cmake)) stop("CMake was not found on the runner")
+          commands <- list(
+            c("-S", shQuote(source), "-B", shQuote(build),
+              "-DCMAKE_BUILD_TYPE=Release", "-DBUILD_SHARED_LIB=OFF",
+              "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"),
+            c("--build", shQuote(build), "--config", "Release", "--target", "tidy", "--parallel", "2")
+          )
+          for (args in commands) {
+            status <- system2(cmake, args)
+            if (!identical(status, 0L)) stop("HTML Tidy build failed")
+          }
+          tidy <- list.files(build, "^tidy([.]exe)?$", recursive = TRUE, full.names = TRUE)
+          stopifnot(length(tidy) == 1L)
+          tidy <- normalizePath(tidy, winslash = "/")
+          stopifnot(identical(system2(tidy, "--version"), 0L))
+          cat("R_TIDYCMD=", tidy, "\n", sep = "", file = Sys.getenv("GITHUB_ENV"), append = TRUE)
       - uses: actions/download-artifact@v7
         with:
           name: cran-source-${{ github.sha }}
@@ -115,6 +146,12 @@ jobs:
                               digest::digest(archive, algo = "sha256", file = TRUE)))
           file.copy(file.path(source, "source.dcf"), evidence)
           capture.output(sessionInfo(), file = file.path(evidence, "check-session-info.txt"))
+          pandoc <- unname(Sys.which("pandoc"))
+          tidy <- Sys.getenv("R_TIDYCMD")
+          stopifnot(nzchar(pandoc), nzchar(tidy), file.exists(tidy))
+          tool_versions <- c(system2(pandoc, "--version", stdout = TRUE),
+                             system2(tidy, "--version", stdout = TRUE))
+          writeLines(tool_versions, file.path(evidence, "documentation-tools.txt"))
           result <- rcmdcheck::rcmdcheck(
             archive, args = "--as-cran", check_dir = evidence,
             timeout = 1800, error_on = "never",
