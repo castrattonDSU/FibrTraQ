@@ -23,6 +23,9 @@
   preventing overlap with the explanatory footnote.
 - Added pinned public native-TCK validation scripts and an independent reader
   oracle, with a separate audit of Float32 conversion boundary effects.
+- Kept in-memory TRK reading compatible with both traditional track lists and
+  the compact track collections returned by recent `freesurferformats`
+  versions. Native stored coordinates are requested explicitly when supported.
 
 ## 0.3.1 (research preview candidate; unreleased)
 

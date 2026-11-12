@@ -27,6 +27,13 @@ loading of collapsed content while still rejecting missing or corrupt images.
 The evidence records initial and decoded image states and an expanded Results
 screenshot so the advanced figures can also be inspected.
 
+Use a short output root. The browser check records the longest file path and
+requires fewer than 260 characters, retaining spaces, `#`, `%` and Unicode in
+the copied folder. Some Windows applications still use the traditional
+[260-character path limit](https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation).
+Creating a file successfully in R does not establish that a browser can open
+the same long path. This check does not claim support for arbitrary path lengths.
+
 CSV links must produce an actual download whose bytes match the linked file.
 For a PNG, Chromium may either download the file or display it directly. The
 check accepts a byte-matching download, or an observed navigation to the exact

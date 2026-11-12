@@ -172,6 +172,13 @@ async function projectedSceneBounds() {
   });
 }
 
+function bundleFilePaths(directory) {
+  return fs.readdirSync(directory, {withFileTypes: true}).flatMap(entry => {
+    const filename = path.join(directory, entry.name);
+    return entry.isDirectory() ? bundleFilePaths(filename) : [filename];
+  });
+}
+
 (async () => {
   try {
     check(process.platform === "win32", "Acceptance browser runs on native Windows");
@@ -180,6 +187,13 @@ async function projectedSceneBounds() {
       "Relocated bundle preserves the generated original and identical file bytes");
     check(manifest.scientific_tables_passed === 7 && manifest.declared_values_passed === 18,
       "Installed-package fixture passed all scientific known answers");
+    const bundlePaths = bundleFilePaths(root);
+    const longestPath = bundlePaths.reduce((a, b) => a.length >= b.length ? a : b, "");
+    result.path_lengths = {maximum_characters: longestPath.length,
+      longest_relative_path: path.relative(root, longestPath)};
+    check(longestPath.length < 260,
+      "Windows browser fixture uses file paths below the 260-character compatibility limit; choose a shorter output root if needed",
+      result.path_lengths);
     browser = await chromium.launch({headless: true});
     result.browser_version = browser.version();
     result.playwright_version = require("playwright/package.json").version;

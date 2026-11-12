@@ -42,7 +42,10 @@ run_tck_example <- function() {
   local <- image_copy(data$local_mask)
   reference <- image_copy(data$reference_image)
   contexts <- vapply(data$endpoint_contexts, image_copy, character(1L))
-  tracks <- freesurferformats::read.dti.trk(data$tractogram)$tracks
+  read_trk <- freesurferformats::read.dti.trk
+  read_args <- list(filepath = data$tractogram)
+  if ("coords" %in% names(formals(read_trk))) read_args$coords <- "native"
+  tracks <- as.list(do.call(read_trk, read_args)$tracks)
   tractogram <- file.path(input_dir, "sub-example_tractogram.tck")
   write_tck <- function() {
     offset <- 512L

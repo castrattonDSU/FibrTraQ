@@ -344,9 +344,9 @@ FibrTraQ <- function(fNode,
     if (!identical(input_format, "tck") && is.null(track_voxel_size)) {
       track_voxel_size <- ftq_trackvis_voxel_size(all_tracks$header)
     }
-    track_list <- all_tracks$tracks
+    track_list <- as.list(all_tracks$tracks)
   } else if (is.list(all_tracks)) {
-    track_list <- all_tracks
+    track_list <- as.list(all_tracks)
   } else {
     stop("all_tracks must be a TRK/TCK object with $tracks, a supported stream object, or a list of tracks.")
   }

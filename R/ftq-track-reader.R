@@ -34,7 +34,16 @@ ftq_read_tractogram <- function(path, reader = "auto", chunk_size = 50000L) {
   if (reader == "auto") reader <- "stream"
   if (format == "trk") {
     if (reader == "stream") return(ftq_trk_stream(path, chunk_size = chunk_size))
-    return(freesurferformats::read.dti.trk(path))
+    read_trk <- freesurferformats::read.dti.trk
+    read_args <- list(filepath = path)
+    # FibrTraQ applies the selected mapping itself. Newer dependency versions
+    # expose a coordinate choice; request the unchanged stored coordinates.
+    if ("coords" %in% names(formals(read_trk))) read_args$coords <- "native"
+    trk <- do.call(read_trk, read_args)
+    # fs.tracts is a compact S3 container: for() and C++ see its storage fields,
+    # while as.list() dispatches to the dependency's per-streamline accessor.
+    trk$tracks <- as.list(trk$tracks)
+    return(trk)
   }
   stream <- ftq_tck_stream(path, chunk_size = chunk_size)
   if (reader == "stream") return(stream)
@@ -52,6 +61,9 @@ ftq_is_track_stream <- function(x) {
 ftq_track_format <- function(x) {
   if (inherits(x, "ftq_tck_stream") || inherits(x, "ftq_tck")) return("tck")
   if (inherits(x, "ftq_trk_stream")) return("trk")
+  # A bare compact track collection has no tractogram header; its [[ method
+  # addresses streamlines by index rather than named metadata fields.
+  if (inherits(x, "fs.tracts")) return(NULL)
   if (!is.list(x) || !is.list(x[["header", exact = TRUE]])) return(NULL)
   header <- x[["header", exact = TRUE]]
   if (identical(header[["id", exact = TRUE]], "mrtrix tracks")) return("tck")
@@ -68,6 +80,8 @@ ftq_track_count <- function(x) {
       n <- x$header$n_count
       if (is.null(n) || length(n) != 1L || is.na(n) || n <= 0) return(NA_integer_)
     }
+  } else if (inherits(x, "fs.tracts")) {
+    n <- length(x)
   } else if (is.list(x) && is.list(x[["tracks", exact = TRUE]])) {
     n <- length(x[["tracks", exact = TRUE]])
   } else if (is.list(x)) {

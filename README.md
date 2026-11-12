@@ -251,6 +251,7 @@ For historical Windows summaries containing `%5C` in broken links, use the
 | Images have the same dimensions but are rejected | Check their NIfTI affines with `ftq_mask_grid_report()` |
 | A 4-D image is rejected | Supply a b-value for every image volume |
 | Existing-output error | Choose a new directory or deliberately set `overwrite = TRUE` |
+| A Windows report opens but a figure or download does not | Move the complete output folder to a short location such as `C:/FibrTraQ/`. Some Windows applications retain a [260-character full-path limit](https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation), even when R created the file successfully. Keep the report folder and its contents together |
 | A report or viewer fails after the analysis completes | Open the saved run index: completed scientific files remain available and the failed stage is recorded |
 | Anatomical QC is unavailable | Supply a trusted same-grid endpoint context mask; image-bound coverage alone is not anatomical evidence |
 | Streamlines appear outside anatomy | Review complete paths, coordinate mapping and the input tractography; the viewer does not clip paths to a mask |

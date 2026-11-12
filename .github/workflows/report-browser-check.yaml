@@ -23,7 +23,7 @@ jobs:
       - name: Set the report output directory on the runner
         shell: pwsh
         run: |
-          $reviewPath = Join-Path $env:RUNNER_TEMP "fibrtraq-browser-acceptance-${{ matrix.tractogram-format }}"
+          $reviewPath = Join-Path $env:RUNNER_TEMP "ftq-browser-${{ matrix.tractogram-format }}"
           "QA_ROOT=$reviewPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - uses: r-lib/actions/setup-r@v2
         with:

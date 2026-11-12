@@ -312,8 +312,13 @@ test_that("shared dispatch preserves the existing TRK reader results", {
   generic <- ftq_read_tractogram(path, chunk_size = 2L)
   expect_identical(generic, direct)
   expect_identical(ftq_track_format(generic), "trk")
-  expect_identical(ftq_track_format(freesurferformats::read.dti.trk(path)), "trk")
+  read_trk <- freesurferformats::read.dti.trk
+  read_args <- list(filepath = path)
+  if ("coords" %in% names(formals(read_trk))) read_args$coords <- "native"
+  memory_expected <- do.call(read_trk, read_args)
+  memory_expected$tracks <- as.list(memory_expected$tracks)
+  expect_identical(ftq_track_format(memory_expected), "trk")
   expect_equal(ftq_track_stream_sample(generic, 100L), ftq_trk_stream_sample(direct, 100L))
-  expect_equal(ftq_read_tractogram(path, "memory"), freesurferformats::read.dti.trk(path))
+  expect_equal(ftq_read_tractogram(path, "memory"), memory_expected)
   expect_identical(ftq_track_count(generic), as.integer(generic$header$n_count))
 })
