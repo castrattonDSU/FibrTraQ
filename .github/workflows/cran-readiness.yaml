@@ -88,11 +88,17 @@ jobs:
       - uses: r-lib/actions/setup-pandoc@v2
       - uses: r-lib/actions/setup-tinytex@v2
       - name: Verify the reference manual tools and fonts
+        env:
+          # Use TeX Live's sequential downloader; Windows aria2c prefetch can stall.
+          TEXLIVE_DOWNLOADER: curl
+          TEXLIVE_PREFETCH: '0'
         shell: Rscript {0}
         run: |
           pdflatex <- unname(Sys.which("pdflatex"))
           kpsewhich <- unname(Sys.which("kpsewhich"))
           if (!nzchar(pdflatex) || !nzchar(kpsewhich)) stop("TinyTeX PDF tools were not found")
+          print(Sys.which(c("makeindex", "texi2dvi", "pdflatex")))
+          print(Sys.getenv(c("MAKEINDEX", "PDFLATEX", "R_TEXI2DVICMD", "TEXI2DVI")))
           stopifnot(identical(system2(pdflatex, "--version"), 0L))
           locate_font <- function(font) {
             output <- tempfile("font-path-")
@@ -102,20 +108,30 @@ jobs:
             path <- readLines(output, warn = FALSE)
             path[nzchar(path)]
           }
-          if (!length(locate_font("pcrr8t.tfm"))) {
+          needed <- character()
+          if (!length(locate_font("pcrr8t.tfm"))) needed <- c(needed, "courier")
+          if (!nzchar(Sys.which("makeindex"))) needed <- c(needed, "makeindex")
+          if (length(needed)) {
             launcher <- if (.Platform$OS.type == "windows") "tlmgr.bat" else "tlmgr"
             tlmgr <- unname(Sys.which(launcher))
             if (!nzchar(tlmgr)) stop("TinyTeX launcher was not found: ", launcher)
             status <- system2(tlmgr,
-              c("--repository", "https://mirrors.ctan.org/systems/texlive/tlnet", "install", "courier"),
+              c("--repository", "https://mirrors.ctan.org/systems/texlive/tlnet", "install", needed),
               timeout = 300)
-            if (!identical(status, 0L)) stop("Targeted Courier font installation failed")
+            if (!identical(status, 0L)) stop("Targeted manual prerequisite installation failed: ",
+                                           paste(needed, collapse = ", "))
           }
           for (font in c("inconsolata.sty", "times.sty", "pcrr8t.tfm")) {
             path <- locate_font(font)
             if (!length(path)) stop("Required reference manual font was not found: ", font)
             cat(font, ": ", path, "\n", sep = "")
           }
+          makeindex <- unname(Sys.which("makeindex"))
+          if (!nzchar(makeindex)) stop("The required makeindex program was not found")
+          makeindex <- normalizePath(makeindex, winslash = "/")
+          Sys.setenv(MAKEINDEX = makeindex)
+          cat("Resolved MAKEINDEX: ", makeindex, "\n", sep = "")
+          cat("MAKEINDEX=", makeindex, "\n", sep = "", file = Sys.getenv("GITHUB_ENV"), append = TRUE)
       - name: Build the pinned HTML manual validator
         shell: Rscript {0}
         run: |
@@ -169,6 +185,28 @@ jobs:
           tool_versions <- c(system2(pandoc, "--version", stdout = TRUE),
                              system2(tidy, "--version", stdout = TRUE))
           writeLines(tool_versions, file.path(evidence, "documentation-tools.txt"))
+          # Preserve the first indexed build before R CMD check can try a fallback.
+          capture.output(list(commands = Sys.which(c("makeindex", "texi2dvi", "pdflatex")),
+                              environment = Sys.getenv(c("MAKEINDEX", "PDFLATEX", "R_TEXI2DVICMD", "TEXI2DVI")),
+                              texi2dvi_option = getOption("texi2dvi")),
+                         file = file.path(evidence, "manual-tools.txt"))
+          manual_root <- file.path(Sys.getenv("RUNNER_TEMP"), "ftq-manual-preflight")
+          dir.create(manual_root, recursive = TRUE)
+          utils::untar(archive, exdir = manual_root)
+          manual_source <- file.path(manual_root, metadata[1L, "Package"])
+          manual_build <- file.path(evidence, "manual-preflight-build")
+          manual_pdf <- file.path(evidence, "manual-preflight.pdf")
+          manual_log <- file.path(evidence, "manual-preflight.log")
+          manual_status <- system2(file.path(R.home("bin"), "R"),
+            c("CMD", "Rd2pdf", "--no-preview", "--internals", "--no-clean",
+              paste0("--build-dir=", shQuote(manual_build)),
+              paste0("--output=", shQuote(manual_pdf)), shQuote(manual_source)),
+            stdout = manual_log, stderr = manual_log, timeout = 120)
+          writeLines(as.character(manual_status), file.path(evidence, "manual-preflight-exit-status.txt"))
+          cat(tail(readLines(manual_log, warn = FALSE), 60L), sep = "\n")
+          if (!identical(manual_status, 0L) || !file.exists(manual_pdf) || file.info(manual_pdf)$size == 0) {
+            stop("Indexed manual preflight failed; inspect manual-preflight.log and manual-preflight-build.")
+          }
           result <- rcmdcheck::rcmdcheck(
             archive, args = "--as-cran", check_dir = evidence,
             timeout = 1800, error_on = "never",
