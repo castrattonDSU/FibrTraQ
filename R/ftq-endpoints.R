@@ -1058,6 +1058,34 @@ ftq_endpoint_penetration_summary <- function(penetration, target_labels = NULL) 
   do.call(rbind, rows)
 }
 
+ftq_endpoint_plot_target_layout <- function(targets, panels = 1L) {
+  labels <- vapply(as.character(targets), function(target) {
+    # Insert wrapping opportunities after underscores, retaining every part of
+    # the target identifier. Only display labels change; source tables do not.
+    lines <- strwrap(gsub("_", "_ ", target, fixed = TRUE), width = 16L)
+    lines <- gsub("_ ", "_", lines, fixed = TRUE)
+    # strwrap leaves long unbroken tokens intact. Split those losslessly so a
+    # single long identifier cannot demand a margin taller than the device.
+    lines <- unlist(lapply(lines, function(line) {
+      starts <- seq.int(1L, nchar(line), by = 16L)
+      substring(line, starts, pmin(starts + 15L, nchar(line)))
+    }), use.names = FALSE)
+    paste(lines, collapse = "\n")
+  }, character(1L))
+  label_width <- graphics::strwidth(labels, units = "inches")
+  label_height <- graphics::strheight(labels, units = "inches")
+  available_width <- (grDevices::dev.size("in")[[1L]] / panels - 1.4) /
+    max(1L, length(labels))
+  horizontal <- all(label_width <= 0.85 * available_width & label_height <= 1.5)
+  depth <- if (horizontal) {
+    label_height
+  } else {
+    label_width
+  }
+  list(labels = labels, las = if (horizontal) 1L else 2L,
+       bottom = max(4, ceiling(max(depth, 0) / graphics::par("csi") + 2)))
+}
+
 ftq_plot_endpoint_classification <- function(summary, path) {
   exact <- summary[summary$tolerance == "exact", , drop = FALSE]
   if (!nrow(exact)) return(invisible(NULL))
@@ -1080,6 +1108,7 @@ ftq_plot_endpoint_classification <- function(summary, path) {
   colors <- c("#16827A", "#C24156", "#D8872D", "#4B78A8", "#7A7F87")
   grDevices::png(ftq_png_filename(path), width = 2200, height = 1500, res = 220)
   on.exit(grDevices::dev.off(), add = TRUE)
+  target_layout <- ftq_endpoint_plot_target_layout(exact$target)
   graphics::layout(matrix(c(1, 2), nrow = 2L), heights = c(1, 8))
   graphics::par(oma = c(2, 0, 3, 0))
   ftq_endpoint_plot_legend(
@@ -1093,11 +1122,11 @@ ftq_plot_endpoint_classification <- function(summary, path) {
     colors = colors,
     cex = 0.82
   )
-  graphics::par(mar = c(9, 5, 2, 2))
+  graphics::par(mar = c(target_layout$bottom, 5, 2, 2))
   bp <- graphics::barplot(
     values,
-    names.arg = exact$target,
-    las = 2,
+    names.arg = target_layout$labels,
+    las = target_layout$las,
     col = colors,
     border = NA,
     ylim = c(0, 100),
@@ -1142,6 +1171,7 @@ ftq_plot_endpoint_comparison <- function(summary, path) {
   upper <- min(100, max(5, ymax * 1.1))
   grDevices::png(ftq_png_filename(path), width = 2400, height = 1500, res = 220)
   on.exit(grDevices::dev.off(), add = TRUE)
+  target_layout <- ftq_endpoint_plot_target_layout(exact$target, panels = 2L)
   graphics::layout(
     matrix(c(1, 1, 2, 3), nrow = 2L, byrow = TRUE),
     heights = c(1, 8)
@@ -1152,12 +1182,12 @@ ftq_plot_endpoint_comparison <- function(summary, path) {
     legend = rownames(intersection_values),
     colors = colors
   )
-  graphics::par(mar = c(9, 5, 3, 1))
+  graphics::par(mar = c(target_layout$bottom, 5, 3, 1))
   intersection_bp <- graphics::barplot(
     intersection_values,
     beside = TRUE,
-    names.arg = exact$target,
-    las = 2,
+    names.arg = target_layout$labels,
+    las = target_layout$las,
     col = colors,
     border = NA,
     ylim = c(0, upper),
@@ -1168,12 +1198,12 @@ ftq_plot_endpoint_comparison <- function(summary, path) {
   if (any(missing_intersections)) graphics::text(
     intersection_bp[missing_intersections], upper * 0.04, "NA", col = "#9f1239", cex = 0.75
   )
-  graphics::par(mar = c(9, 5, 3, 1))
+  graphics::par(mar = c(target_layout$bottom, 5, 3, 1))
   focal_bp <- graphics::barplot(
     focal_values,
     beside = TRUE,
-    names.arg = exact$target,
-    las = 2,
+    names.arg = target_layout$labels,
+    las = target_layout$las,
     col = colors,
     border = NA,
     ylim = c(0, upper),
@@ -1212,6 +1242,7 @@ ftq_plot_endpoint_penetration <- function(penetration_summary, path) {
   values[, undefined] <- NA_real_
   grDevices::png(ftq_png_filename(path), width = 2200, height = 1500, res = 220)
   on.exit(grDevices::dev.off(), add = TRUE)
+  target_layout <- ftq_endpoint_plot_target_layout(penetration_summary$target)
   graphics::layout(matrix(c(1, 2), nrow = 2L), heights = c(1, 8))
   graphics::par(oma = c(2, 0, 4, 0))
   colors <- c("#C24156", "#D8872D", "#16827A", "#4B78A8", "#6F5B95")
@@ -1220,7 +1251,7 @@ ftq_plot_endpoint_penetration <- function(penetration_summary, path) {
     colors = colors,
     cex = 0.86
   )
-  graphics::par(mar = c(9, 5, 2, 2))
+  graphics::par(mar = c(target_layout$bottom, 5, 2, 2))
   bp <- graphics::barplot(
     values,
     beside = TRUE,
@@ -1234,8 +1265,8 @@ ftq_plot_endpoint_penetration <- function(penetration_summary, path) {
   graphics::axis(
     1,
     at = colMeans(bp),
-    labels = penetration_summary$target,
-    las = 2,
+    labels = target_layout$labels,
+    las = target_layout$las,
     tick = FALSE
   )
   if (any(undefined)) graphics::text(colMeans(bp)[undefined], 4, "NA", col = "#9f1239", cex = 0.9)

@@ -54,8 +54,9 @@ coordinate checks as \code{localROI}.}
 
 \item{cNode_labels}{Character vector of names for cNodes (same length/order as list).}
 
-\item{all_tracks}{Tractography object as read by freesurferformats::read.dti.trk(),
-an internal streaming \code{.trk} object, or a list of tracks (each track either
+\item{all_tracks}{Tractography object as read by freesurferformats::read.dti.trk()
+or freesurferformats::read.dti.tck(), an internal streaming \code{.trk} or \code{.tck}
+object, or a list of tracks (each track either
 list(num_points, coords) or an n x 3 matrix).}
 
 \item{focal_threshold}{"nonzero" (default) or numeric threshold for ROI voxels.}
@@ -89,13 +90,17 @@ converts TrackVis voxel-mm coordinates to 1-based voxel-center indices
 using the header voxel sizes. \code{"trackvis"} applies a TrackVis header
 affine before converting world coordinates to ROI voxel indices.
 \code{"world"} and TrackVis affine outputs are interpreted as millimetres and
-converted to the reference NIfTI's declared native spatial unit.}
+converted to the reference NIfTI's declared native spatial unit.
+Recognized TCK objects accept only \code{"auto"} or \code{"world"}, both of which use
+the format's fixed RAS+ world-millimetre convention.}
 
 \item{ref_image}{Reference image used when \code{track_space} is \code{"world"} or
 \code{"trackvis"}, considered by \code{"auto"}, and used for \code{"local_search"}
 geometry. If NULL, falls back to \code{fNode}. An explicitly used reference
 must have the focal dimensions and, when both objects declare a valid
-qform/sform, the same unit-normalized affine/grid.}
+qform/sform, the same unit-normalized affine/grid.
+TCK requires a declared qform or sform and known spatial units; conflicting
+coded transforms are rejected rather than selected by overlap.}
 
 \item{auto_n}{Number of tracks to sample when selecting mapping/flips. Default 200.}
 
@@ -103,15 +108,18 @@ qform/sform, the same unit-normalized affine/grid.}
 flips are searched automatically, but analysis stops if the best candidate
 would reflect any axis. Verify anatomical alignment and explicitly set
 \code{track_space} and \code{axis_flip} before continuing. If supplied, the provided
-flips are used; they remain the caller's alignment decision.}
+flips are used; they remain the caller's alignment decision.
+TCK objects accept only no flips; apply intended registration upstream.}
 
 \item{track_affine}{Optional 4x4 affine that maps raw track coordinates to
 world coordinates. If omitted and \code{all_tracks} has a TrackVis
-\code{header$vox2ras}, that header affine is used.}
+\code{header$vox2ras}, that header affine is used.
+An explicit value is not accepted for recognized TCK objects.}
 
 \item{track_voxel_size}{Optional numeric length-3 TrackVis header voxel sizes
 in mm. Required for \code{track_space = "voxelmm"}; inferred from
-\code{all_tracks$header} when available.}
+\code{all_tracks$header} when available.
+An explicit value is not accepted for recognized TCK objects.}
 
 \item{backend}{Counting backend. \code{"r"} uses the reference R implementation.
 \code{"cpp"} uses the compiled backend when available. \code{"auto"} uses the
@@ -196,6 +204,9 @@ Branded wrapper around \code{\link{FibrTraQ}}.
 \details{
 Coordinate handling notes:
 \itemize{
+\item Native MRtrix TCK objects use RAS+ world millimetres and the declared NIfTI
+transform. No overlap-based space or reflection search is performed. The
+reference must declare spatial units and a valid, unambiguous qform/sform.
 \item Some tractography encodes voxel indices at a 0.1 scale ("vox10"): multiply
 coordinates by 10 before discretization.
 \item Some datasets require axis flips (e.g., flip_z) to align coordinate conventions

@@ -194,32 +194,41 @@ ftq_interactive_qc_viewer <- function(manifest,
     rep(0, 3L)
   }
 
-  track_reader <- m$track_reader
-  if (identical(track_reader, "auto")) {
-    track_reader <- if (grepl("\\.trk$", tolower(m$tractogram))) "stream" else "memory"
-  }
-  stream <- NULL
-  track_list <- NULL
+  tractogram <- ftq_read_tractogram(
+    m$tractogram, reader = m$track_reader, chunk_size = m$track_chunk_size
+  )
+  tractogram_format <- ftq_track_format(tractogram)
+  stream <- if (ftq_is_track_stream(tractogram)) tractogram else NULL
+  track_list <- if (is.null(stream)) tractogram$tracks else NULL
   track_affine <- NULL
   track_voxel_size <- NULL
-  if (identical(track_reader, "stream")) {
-    stream <- ftq_trk_stream(m$tractogram, chunk_size = m$track_chunk_size)
-    track_affine <- ftq_trackvis_affine(stream$header)
-    track_voxel_size <- ftq_trackvis_voxel_size(stream$header)
-  } else {
-    trk <- freesurferformats::read.dti.trk(m$tractogram)
-    track_list <- trk$tracks
-    track_affine <- ftq_trackvis_affine(trk$header)
-    track_voxel_size <- ftq_trackvis_voxel_size(trk$header)
-  }
-
-  track_space <- ftq_qc_resolve_track_space(
-    track_space = ftq_value(attr(run_result, "fibrtraq_track_space"), m$track_space),
-    track_affine = track_affine,
-    ref_image = ref_image,
-    track_voxel_size = track_voxel_size
-  )
+  selected_track_space <- ftq_value(attr(run_result, "fibrtraq_track_space"), m$track_space)
   axis_flip <- ftq_value(attr(run_result, "fibrtraq_axis_flip"), m$axis_flip, c(FALSE, FALSE, FALSE))
+  if (identical(tractogram_format, "tck")) {
+    settings <- ftq_tck_coordinate_settings(selected_track_space, axis_flip, ref_image)
+    spatial_images <- c(
+      list(focal$image), lapply(assignment_targets, `[[`, "image"),
+      if (!is.null(local_context)) list(local_context$image),
+      lapply(m$endpoint_context_paths, RNifti::readNifti, internal = FALSE)
+    )
+    for (spatial_image in spatial_images) {
+      ftq_tck_validate_reference(spatial_image)
+      ftq_validate_direct_reference_grid(focal$image, spatial_image, vol_dim)
+    }
+    ftq_validate_direct_reference_grid(focal$image, settings$reference, vol_dim)
+    track_space <- settings$track_space
+    axis_flip <- settings$axis_flip
+    ref_image <- settings$reference
+  } else {
+    track_affine <- ftq_trackvis_affine(tractogram$header)
+    track_voxel_size <- ftq_trackvis_voxel_size(tractogram$header)
+    track_space <- ftq_qc_resolve_track_space(
+      track_space = selected_track_space,
+      track_affine = track_affine,
+      ref_image = ref_image,
+      track_voxel_size = track_voxel_size
+    )
+  }
 
   samples <- stats::setNames(vector("list", length(target_labels)), target_labels)
   for (target in target_labels) samples[[target]] <- list()
@@ -441,7 +450,7 @@ ftq_interactive_qc_viewer <- function(manifest,
       integer(length(assignment_target_labels)),
       assignment_target_labels
     )
-    ftq_trk_stream_iterate(
+    ftq_track_stream_iterate(
       stream,
       callback = function(chunk, start_index, end_index) {
         if (done) return(FALSE)
@@ -486,7 +495,7 @@ ftq_interactive_qc_viewer <- function(manifest,
       chunk_size = stream$chunk_size
     )
   } else if (!is.null(stream)) {
-    ftq_trk_stream_iterate(
+    ftq_track_stream_iterate(
       stream,
       callback = function(chunk, start_index, end_index) {
         for (track in chunk) {

@@ -4,7 +4,7 @@
 
 FibrTraQ is an analysis package that **assesses and quantifies the connectivity of a specified focal node (fNode) to an unlimited set of connecting nodes (cNodes)**. The primary outputs are in two formats: voxel-wise fNode heatmaps for each defined cNode, and computed region-to-region spatial connectivity (RSC) percentage values in summary tables that describe how much of the fNode is connected to each cNode. The package also generates a 3D quality control viewer. FibrTraQ is suitable to quantify how much of a fNode has connections with each target cNode, inspect the spatial distribution of those connections, and examine how full-path or endpoint-based target assignment affects the result. Of note, interpretation is reliant on the plausibility of tractography, accuracy of node delineations and spatial harmonization across file inputs.
 
-To run the package, you need a tractogram in `.trk` format and binary NIfTI masks (`.nii` or `.nii.gz`) for the fNode and each cNode. A same-subject, aligned reference image (such as b0, T1, T2 or FA) is optional for execution and strongly recommended for spatial review.
+To run the package, you need a TrackVis `.trk` or MRtrix `.tck` tractogram and binary NIfTI masks (`.nii` or `.nii.gz`) for the fNode and each cNode. A same-subject, aligned reference image (such as b0, T1, T2 or FA) is optional for execution and strongly recommended for spatial review.
 
 **Research preview:** FibrTraQ's tests establish the documented counting behavior and computational reproducibility. Each dataset still requires independent spatial verification before its results are interpreted. Follow the [spatial-verification guide](docs/spatial-verification.md) when bringing new inputs into the package.
 
@@ -101,9 +101,18 @@ analysis$index[, c(
 )]
 browseURL(analysis$report_index)
 ```
+
+For an MRtrix tractogram, replace `"tractogram.trk"` with your `.tck` filename
+in the same call. The reports, maps and 3-D viewer use the same workflow.
+TCK points are read as RAS+ world coordinates in millimeters and mapped through
+the NIfTI affine; leave `track_space = "auto"` or use `"world"`, with no extra
+axis flips. The NIfTI reference (or focal mask when no reference is supplied)
+must have valid, consistent spatial geometry and declared units. See the
+[TCK input requirements](docs/advanced-workflows.md#mrtrix-tck-inputs) for details.
+
 The reports use the same structure as the bundled example, with results calculated from your inputs. Files will also be generated in your output directory: reports, connection density NIfTI files, figures, and tabular-formatted data. Note, this analysis assigns targets from the full streamline path and uses the fNode mask itself as a destination for `local` connection assignment. `local` and `local_search` mean different things. `local` records whether the entire streamline stays inside the fNode; `local_search` assigns a target from the two endpoints and a physical search radius. Changing that radius does not change the local-region mask.
 
-Inspect the spatial previews and 3-D QC before interpreting results. FibrTraQ rejects incompatible image grids rather than silently resampling them. When `axis_flip` is omitted, automatic mapping also stops if the best candidate flips any axis: sampled ROI overlap cannot establish anatomical alignment. An unreflected candidate or explicit mapping still needs independent review. Follow the [spatial-verification steps](docs/spatial-verification.md) to check the source geometry, pin the mapping and locate its metadata. Without `reference_image`, the grayscale background is tractogram-derived density, not independent anatomical evidence.
+Inspect the spatial previews and 3-D QC before interpreting results. FibrTraQ rejects incompatible image grids rather than silently resampling them. For `.trk`, when `axis_flip` is omitted, automatic mapping also stops if the best candidate flips any axis: sampled ROI overlap cannot establish anatomical alignment. For `.tck`, the mapping follows the format's world-coordinate convention without an orientation search. Every dataset still needs independent review. Follow the [spatial-verification steps](docs/spatial-verification.md) to check the source geometry, pin the mapping and locate its metadata. Without `reference_image`, the grayscale background is tractogram-derived density, not independent anatomical evidence.
 
 This analysis can be repeated for entire cohorts for subject-wise data.
 
@@ -118,7 +127,7 @@ Add these arguments to `ftq_run_files()` when they apply:
 | `bvals = file.path(ref_dir, "diffusion.bval")` | Supply one b-value for every volume of a 4-D reference |
 | `assignment_mode = "endpoint_voxels"` | Require an unambiguous focal/target endpoint-voxel pair |
 | `assignment_mode = "local_search", search_radius_mm = 1` | Require an unambiguous endpoint pair within the specified physical radius; choose the radius for your study |
-| `track_space = "voxelmm", axis_flip = c(FALSE, FALSE, FALSE)` | Pin a verified mapping; this example is appropriate only if you have confirmed voxel-millimeter coordinates with no axis flips |
+| `track_space = "voxelmm", axis_flip = c(FALSE, FALSE, FALSE)` | Pin a verified `.trk` mapping; this example requires confirmed voxel-millimeter coordinates with no axis flips. Native `.tck` uses `"world"` |
 | `report_slices = c(20L, 30L, 40L)` | Select existing one-based axial slices for density heatmap previews; automatic selection is the default |
 
 The [interpretation guide](docs/interpretation.md#target-assignment-modes)
@@ -237,7 +246,8 @@ For historical Windows summaries containing `%5C` in broken links, use the
 | GitHub installation returns HTTP 404 | Confirm repository access and an authorized GitHub credential |
 | Functions or arguments are missing after installation | Restart R; check the [loaded package revision](docs/advanced-workflows.md#verify-an-installed-version) and reinstall the intended version |
 | No focal hits | Review the tractogram coordinate convention, focal mask and selected mapping |
-| Automatic mapping stops because its best candidate flips an axis | Verify the tractogram-to-mask alignment independently, then explicitly set `track_space` and `axis_flip`; a higher ROI-overlap score does not prove the orientation is correct |
+| Automatic `.trk` mapping stops because its best candidate flips an axis | Verify the tractogram-to-mask alignment independently, then explicitly set `track_space` and `axis_flip`; a higher ROI-overlap score does not prove the orientation is correct |
+| A `.tck` run rejects geometry or coordinate settings | Use `track_space = "auto"` or `"world"` without extra flips, and resolve missing units or invalid/conflicting NIfTI transforms at their source; see [TCK requirements](docs/advanced-workflows.md#mrtrix-tck-inputs) |
 | Images have the same dimensions but are rejected | Check their NIfTI affines with `ftq_mask_grid_report()` |
 | A 4-D image is rejected | Supply a b-value for every image volume |
 | Existing-output error | Choose a new directory or deliberately set `overwrite = TRUE` |

@@ -21,6 +21,8 @@ test_that("public validation registry distinguishes evidence from candidates", {
 
   allowed <- c(
     "completed_core_backend_benchmark",
+    "protocol_available",
+    "completed_native_tck_interoperability",
     "template_only",
     "registry_only"
   )

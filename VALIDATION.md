@@ -1,7 +1,8 @@
 # FibrTraQ Validation Evidence
 
 This document records the evidence supporting FibrTraQ and the acceptance gates
-for the **0.3.1 research preview candidate**. It is intentionally separate from
+for the **0.3.1 research preview candidate**, with separately scoped native TCK
+evidence for **0.3.2.9000 development**. It is intentionally separate from
 the [README](README.md): the README is the user guide, while this file describes
 what has been verified, what each check establishes, and what remains outside
 the scope of software testing.
@@ -41,6 +42,7 @@ independent anatomical evidence.
 | Windows report-browser acceptance | Workflow available; inspect the result and screenshots for each candidate | Native Windows Chromium opens relocated synthetic reports, checks local links and downloads, and exercises rendered 3-D controls; this is separate from real-brain anatomical review | [Browser acceptance procedure](.github/scripts/browser-acceptance/README.md) |
 | Automatic-reflection regression | Implemented and passed in the preceding development revision | An asymmetric synthetic case makes an incorrect reflection score more focal hits; the engine and file workflow must reject that unconfirmed choice before counting, while explicit mappings preserve known counts | [`test_orientation_guard.R`](tests/testthat/test_orientation_guard.R) |
 | dTOR-985 production-scale backend comparison | Reported historical local benchmark for pre-endpoint core outputs | Exact R/C++ agreement was recorded for per-voxel, RSC, and fate tables on 11,820,000 streamlines; performance characterization only, without a self-contained archived evidence bundle | [`backend-benchmark-dtor985.md`](inst/validation/backend-benchmark-dtor985.md) |
+| Native TCK public-human interoperability | Completed local development analysis | One subject, 10,000 native MRtrix streamlines; exact independent reader, R/C++, and reversed-point-order checks; inspected reports; converted-TRK boundary differences retained and accounted for | [`native-tck-evidence.md`](inst/validation/native-tck-evidence.md) |
 | Public benchmark setup assets | Available, not a completed release claim | Reusable manifests and scripts for independent external validation | [`inst/validation`](inst/validation) |
 
 The dTOR-985 benchmark predates the additive endpoint tables. It supports
@@ -62,6 +64,16 @@ unreflected coordinate convention or an explicitly supplied transformation.
 The regression establishes that the reproduced failure cannot silently proceed
 through the tested entry points; it does not establish universal anatomical
 accuracy.
+
+The native TCK development analysis uses pinned public Neurodesk/BTC_preop
+inputs. Its 58 native execution/invariance checks pass. Exact equality to an
+independently converted TRK does not pass: Float32 serialization changes three
+rounded voxel paths, one of which changes a focal assignment. All 72 checks in
+the causal audit account for the observed differences without count tolerances.
+This is one biological subject and a 10,000-streamline subset, with geometric
+tissue partitions rather than validated anatomical parcels. The local evidence
+does not establish a cross-platform release result or biological ground truth.
+See the linked evidence record for exact counts, provenance and reproduction.
 
 ## Reproduce The Bundled Analysis
 

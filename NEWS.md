@@ -1,5 +1,29 @@
 # FibrTraQ changes
 
+## 0.3.2.9000 (in development)
+
+- Added native MRtrix `.tck` inputs to the existing file, manifest and regional
+  workflows, including streamed and in-memory reading of single-file
+  Float32/Float64 data in either byte order. Standard and Target reports,
+  density context, endpoint outputs, maps and the interactive 3-D QC viewer
+  use the same scientific counting engine as `.trk` inputs.
+- TCK coordinates follow their RAS+ world-millimeter convention through the
+  NIfTI affine without orientation guessing. TCK runs require declared image
+  units and valid, consistent NIfTI transforms, and reject extra flips or
+  incompatible coordinate overrides. Existing `.trk` mapping behavior is
+  preserved. Inputs are not automatically registered or resampled, and
+  streamline counts remain unweighted.
+- Documented TCK input requirements and the distinction between format support
+  and independent anatomical validation in the README and workflow guides.
+- Preserved focal-image voxel sizes in endpoint audit tables when no separate
+  reference image is supplied. Non-isotropic TRK inputs previously displayed
+  unit voxel sizes in those metadata fields; streamline counts and mappings
+  are unchanged.
+- Wrapped long endpoint-figure target labels without truncating identifiers,
+  preventing overlap with the explanatory footnote.
+- Added pinned public native-TCK validation scripts and an independent reader
+  oracle, with a separate audit of Float32 conversion boundary effects.
+
 ## 0.3.1 (research preview candidate; unreleased)
 
 - Aligned package and citation metadata for the next research preview. The

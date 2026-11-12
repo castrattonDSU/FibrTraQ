@@ -108,7 +108,7 @@ itself does not identify an exact source state.
 
 | File | Requirement |
 |---|---|
-| Tractogram | One TrackVis `.trk` file containing 3-D streamline points |
+| Tractogram | One TrackVis `.trk` or MRtrix `.tck` file containing 3-D streamline points |
 | Focal ROI | One non-empty 3-D NIfTI mask (`.nii` or `.nii.gz`); values should be finite and binary |
 | Target ROIs | One or more named, non-empty 3-D NIfTI masks; values should be finite and binary |
 | Output directory | A new or intentionally replaceable directory for derived files |
@@ -132,9 +132,53 @@ Focal, local, and target masks use nonzero values as foreground; preflight
 reports nonbinary values for review. Endpoint context masks are stricter and
 must be finite, binary, three-dimensional, and on the focal grid.
 
-The `.trk` coordinate convention must also be compatible with that image grid.
-If the convention is unknown, the package can compare plausible mappings for
-a pilot run, but the selected mapping and 3-D QC still require review.
+The tractogram's coordinates must also be compatible with that image grid.
+For `.trk`, if the convention is unknown, the package can compare plausible
+mappings for a pilot run, but the selected mapping and 3-D QC still require
+review. Native `.tck` has a defined world-coordinate convention and follows
+the requirements below.
+
+### MRtrix TCK inputs
+
+Use a `.tck` path in the same `tractogram` argument accepted by
+`ftq_run_files()` or a manifest, or in the subject's `tractograms` entry for
+`ftq_run_regional_study()`. No conversion to `.trk` is required. Standard and
+Target reports, density maps, endpoint outputs and the interactive 3-D viewer
+use the same analysis as the `.trk` workflow.
+
+| Property | Native TCK support |
+|---|---|
+| Storage | Uncompressed, single-file `.tck` with an embedded binary payload; `.tck.gz` and external payload files are not supported |
+| Numeric types | `Float32LE`, `Float32BE`, `Float64LE` and `Float64BE` |
+| Reading | `track_reader = "auto"` streams by default; `"stream"` and `"memory"` are also available |
+| Coordinates | RAS+ world coordinates in millimeters, mapped through the NIfTI affine |
+| Coordinate arguments | `track_space = "auto"` or `"world"`; `axis_flip = NULL` or `c(FALSE, FALSE, FALSE)` |
+| Weights | Ordinary streamline counts; external SIFT2 weights are not applied |
+
+For TCK, `"auto"` selects world coordinates deterministically. It does not
+search for the orientation with the most focal-mask hits. Do not add axis
+flips or override the tractogram affine/voxel size. A negative axis direction
+or oblique orientation encoded in the NIfTI affine is valid and is handled by
+that affine.
+
+The mapping reference must be a genuine NIfTI image with declared spatial
+units (millimeters, meters or micrometers) and a valid, invertible qform or
+sform. When both transforms are declared, they must agree within 0.001 mm at
+the voxel-center grid corners. Missing units, absent or invalid transforms,
+and conflicting qform/sform geometry stop the run. Resolve those source
+metadata with the data producer rather than changing headers to pass a check.
+FibrTraQ converts the declared image units to millimeters for coordinate
+mapping; it does not register or resample the inputs.
+
+If `reference_image` is omitted, the focal NIfTI supplies the coordinate
+reference. A trusted, same-grid anatomical image remains strongly recommended
+for independent spatial review. Plain arrays without NIfTI geometry cannot
+serve as a TCK coordinate reference in a direct core call.
+
+TCK support allows human research tractograms to use these workflows. It does
+not establish anatomical validity for every dataset or change the meaning of
+FibrTraQ's unweighted counts and RSC measures. Review each dataset using the
+[spatial-verification guide](spatial-verification.md).
 
 ## Run a regional study
 
@@ -161,7 +205,7 @@ The function:
 
 | Argument | R structure |
 |---|---|
-| `tractograms` | Named vector or list with one `.trk` path per subject |
+| `tractograms` | Named vector or list with one `.trk` or `.tck` path per subject |
 | `region_masks` | Named outer list; each subject contains the same named regional paths |
 | `reference_images` | Optional named vector/list with one image per subject |
 | `bvals` | Named paths or numeric vectors, required for 4-D references |
@@ -453,7 +497,7 @@ can affect mapping or local search. Coordinate-matrix ROIs are checked for finit
 integer-compatible, in-bounds voxel indices, but they have no affine metadata;
 their spatial provenance remains the caller's responsibility.
 
-The automatic coordinate search shown above is an initial diagnostic, not an
+The `.trk` automatic coordinate search shown above is an initial diagnostic, not an
 anatomical alignment test. When `axis_flip` is omitted, the search still scores
 candidate mappings, but stops before counting if the best candidate reflects
 any axis. Sampled ROI overlap cannot distinguish a correct orientation from a
@@ -473,15 +517,17 @@ These checks matter for every workflow:
    affines. File workflows check these before counting, and the direct
    `FibrTraQ()` engine independently rejects incompatible local, target, and
    used reference grids.
-2. **Treat automatic tract mapping as a pilot.** `track_space = "auto"` and
+2. **Treat automatic `.trk` mapping as a pilot.** `track_space = "auto"` and
    `discretization = "any"` compare plausible mappings. If `axis_flip` is omitted
    and the best candidate reflects an axis, the analysis stops for an explicit
    orientation decision. An unreflected candidate also needs independent
    alignment review; a successful run does not establish anatomical validity.
-3. **Set known coordinates explicitly.** Supported track spaces include
+3. **Use the format's coordinate convention.** For `.trk`, supported spaces include
    `"voxel"`, `"voxelmm"`, `"vox10"`, `"world"`, and `"trackvis"`. Once verified,
    pin both `track_space` and `axis_flip`, including explicit `FALSE` values for
-   axes that must not be reflected.
+   axes that must not be reflected. Native `.tck` accepts only `"auto"` or
+   `"world"`, with no extra axis flips, and requires valid NIfTI geometry as
+   described in [TCK inputs](#mrtrix-tck-inputs).
 4. **Do not repair alignment by changing headers casually.**
    `reheader_images_to_region_grid = TRUE` is only for data whose voxel-index
    correspondence was independently proven and whose source header is known
@@ -604,7 +650,7 @@ completed. A missing optional input, an unavailable anatomical QC assessment,
 and a computation failure are different conditions. Actionable warnings and
 failures remain visible.
 
-When no anatomical background is supplied, `.trk` workflows can generate an
+When no anatomical background is supplied, `.trk` and `.tck` workflows can generate an
 exact tractogram-density image for report orientation. This is visualization
 context only. It is not MRI, a brain mask, tissue volume, or evidence of
 anatomical alignment. The density image is stored with the core maps;
@@ -671,6 +717,6 @@ backend. The manifest example passes this setting explicitly. Direct
 `ftq_run()` and `FibrTraQ()` calls retain the R backend default for backward
 compatibility.
 
-Large `.trk` files are streamed in chunks by default. No GPU, CUDA, Python,
+Large `.trk` and `.tck` files are streamed in chunks by default. No GPU, CUDA, Python,
 ANTs, or other external analysis program is required to run the R package.
 Use `backend = "r"` only for validation or debugging.

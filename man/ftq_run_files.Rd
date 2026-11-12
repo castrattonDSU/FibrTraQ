@@ -43,7 +43,9 @@ ftq_run_files(
 )
 }
 \arguments{
-\item{tractogram}{Path to one TrackVis \code{.trk} file.}
+\item{tractogram}{Path to one TrackVis \code{.trk} or MRtrix \code{.tck} file.
+TCK supports uncompressed, single-file Float32/Float64 data in either byte
+order. Compressed \code{.tck.gz} and external TCK payload files are unsupported.}
 
 \item{focal_mask}{Path to one binary focal-region mask.}
 
@@ -63,7 +65,9 @@ mask is used as the package's local-region default.}
 
 \item{reference_image}{Optional 3-D reference image, or a 4-D diffusion image
 accompanied by \code{bvals}. The reference is used for coordinate conversion
-when required and as the default report background.}
+when required and as the default report background. For TCK, the focal
+NIfTI supplies the coordinate reference when this is omitted. An independent
+anatomical reference remains strongly recommended for spatial review.}
 
 \item{bvals}{Optional b-value file path or numeric vector. Required when
 \code{reference_image} or \code{background_image} is four-dimensional.}
@@ -84,13 +88,15 @@ different affine may be copied to the focal-mask grid without resampling.
 Leave this \code{FALSE} unless an independent geometry audit has established
 voxel-index correspondence and the source image header is non-authoritative.}
 
-\item{track_space}{Coordinate-space setting passed to \code{\link[=ftq_run]{ftq_run()}}.}
+\item{track_space}{Coordinate-space setting passed to \code{\link[=ftq_run]{ftq_run()}}. Native
+TCK accepts \code{"auto"} or \code{"world"}; both use world coordinates deterministically.}
 
 \item{discretization}{Discretization setting passed to \code{\link[=ftq_run]{ftq_run()}}.}
 
-\item{axis_flip}{Optional three-value logical axis flip. When omitted,
-automatic mapping stops if its preferred candidate would reflect an axis.
-Verify alignment before explicitly setting \code{track_space} and \code{axis_flip}.}
+\item{axis_flip}{Optional three-value logical axis flip. For TRK, when
+omitted, automatic mapping stops if its preferred candidate would reflect
+an axis. Verify alignment before explicitly setting \code{track_space} and
+\code{axis_flip}. Native TCK permits only \code{NULL} or three \code{FALSE} values.}
 
 \item{focal_assignment_mode}{Focal assignment mode passed to \code{\link[=ftq_run]{ftq_run()}}.}
 
@@ -99,7 +105,8 @@ Verify alignment before explicitly setting \code{track_space} and \code{axis_fli
 
 \item{endpoint_analysis}{Endpoint analysis mode passed to \code{\link[=ftq_run]{ftq_run()}}.}
 
-\item{track_reader}{Tractogram reader used by the run.}
+\item{track_reader}{Tractogram reader used by the run. \code{"auto"} streams both
+TRK and TCK by default; \code{"stream"} and \code{"memory"} may be selected explicitly.}
 
 \item{track_chunk_size}{Streamline chunk size used by the streaming reader.}
 
@@ -140,7 +147,7 @@ An \code{\link[=ftq_run_regional_study]{ftq_run_regional_study()}} result contai
 the interactive viewer.
 }
 \description{
-This is the simplest file-based FibrTraQ entry point. Supply one TrackVis
+This is the simplest file-based FibrTraQ entry point. Supply one TrackVis or MRtrix
 tractogram, one focal mask, one or more named target masks, and an output
 directory. The function runs the standard analysis and writes the static
 report, target report, endpoint tables, maps, interactive 3-D QC
@@ -152,4 +159,12 @@ one focal region. It does not implement separate counting semantics. Subject
 identifiers remain character labels, including leading zeros. Subject and
 region labels must produce distinct output folders after filename sanitization
 and case folding, so the result bundle also works on Windows.
+
+Native \code{.tck} points are RAS+ world coordinates in millimeters. Their mapping
+uses the NIfTI affine without an orientation search. The reference image, or
+focal NIfTI when a reference is omitted, must declare spatial units and a
+valid, invertible qform or sform; declared forms must agree when both are
+present. Inputs are not automatically registered or resampled. Review
+alignment independently before interpreting results. Counts are unweighted;
+external SIFT2 weights are not applied.
 }

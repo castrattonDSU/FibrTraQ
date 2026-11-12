@@ -210,6 +210,14 @@ ftq_run <- function(manifest,
   dir.create(m$output_dir, recursive = TRUE, showWarnings = FALSE)
 
   fnode <- ftq_read_volume_data(m$fnode)
+  if (is.null(m$ref_image)) {
+    # The array reader deliberately leaves coordinate mapping unchanged. Keep
+    # focal-file spacing for the endpoint audit instead of the unit spacing
+    # RNifti would synthesize from an array without its image header.
+    attr(fnode, "fibrtraq_voxel_size_mm") <- ftq_endpoint_voxel_size(
+      fnode, ref_image = m$fnode
+    )
+  }
   report_slices <- ftq_report_slices(ftq_value(report_slices, m$report$slices), dim(fnode)[3L])
   local <- if (is.null(m[["local"]])) {
     NULL
@@ -225,19 +233,25 @@ ftq_run <- function(manifest,
     mask
   })
   names(endpoint_contexts) <- m$endpoint_context_labels
-  track_reader <- m$track_reader
-  if (identical(track_reader, "auto")) {
-    track_reader <- if (grepl("\\.trk$", tolower(m$tractogram))) "stream" else "memory"
-  }
-  trk <- if (identical(track_reader, "stream")) {
-    ftq_trk_stream(m$tractogram, chunk_size = m$track_chunk_size)
-  } else {
-    freesurferformats::read.dti.trk(m$tractogram)
-  }
+  trk <- ftq_read_tractogram(
+    m$tractogram,
+    reader = m$track_reader,
+    chunk_size = m$track_chunk_size
+  )
+  m$tractogram_format <- ftq_track_format(trk)
   compute_ref_image <- m$ref_image
   if (is.null(compute_ref_image) &&
-      identical(m$target_intersection_mode, "local_search")) {
+      (identical(m$target_intersection_mode, "local_search") ||
+       identical(m$tractogram_format, "tck"))) {
     compute_ref_image <- m$fnode
+  }
+  if (identical(m$tractogram_format, "tck")) {
+    coordinate_settings <- ftq_tck_coordinate_settings(
+      m$track_space, m$axis_flip, compute_ref_image
+    )
+    m$track_space <- coordinate_settings$track_space
+    m$axis_flip <- coordinate_settings$axis_flip
+    m$coordinate_mapping <- coordinate_settings$metadata
   }
 
   compute_args <- list(
@@ -412,10 +426,43 @@ ftq_preflight <- function(manifest,
   allowed_track_space <- c("auto", "voxelmm", "vox10", "voxel", "world", "trackvis")
   add("track_space_supported", "error", m$track_space %in% allowed_track_space,
       paste("track_space =", m$track_space))
+  is_tck <- grepl("\\.tck$", tolower(m$tractogram))
   effective_ref_image <- m$ref_image
   if (is.null(effective_ref_image) &&
-      identical(m$target_intersection_mode, "local_search")) {
+      (identical(m$target_intersection_mode, "local_search") || is_tck)) {
     effective_ref_image <- m$fnode
+  }
+  if (is_tck) {
+    settings <- tryCatch(
+      ftq_tck_coordinate_settings(m$track_space, m$axis_flip, effective_ref_image),
+      error = function(e) e
+    )
+    add("tck_world_coordinate_mapping", "error", !inherits(settings, "error"),
+        if (inherits(settings, "error")) conditionMessage(settings) else
+          "Native TCK uses RAS+ world millimeters and the declared reference affine; axis flips are disabled.")
+    if (!inherits(settings, "error")) {
+      m$track_space <- settings$track_space
+      m$axis_flip <- settings$axis_flip
+    }
+    spatial_paths <- c(
+      list(fnode = m$fnode),
+      if (!is.null(m[["local"]])) list(local = m[["local"]]),
+      stats::setNames(as.list(m$target_paths), paste0("target:", m$target_labels)),
+      if (length(m$endpoint_context_paths)) {
+        stats::setNames(as.list(m$endpoint_context_paths),
+                        paste0("endpoint_context:", m$endpoint_context_labels))
+      }
+    )
+    for (label in names(spatial_paths)) {
+      geometry <- tryCatch(
+        ftq_tck_validate_reference(spatial_paths[[label]], context = label),
+        error = function(e) e
+      )
+      add(paste0("tck_spatial_geometry:", label), "error",
+          !inherits(geometry, "error"),
+          if (inherits(geometry, "error")) conditionMessage(geometry) else
+            "Declared, unambiguous NIfTI affine with known spatial units.")
+    }
   }
   needs_ref_image <- m$track_space %in% c("world", "trackvis")
   add(
@@ -473,8 +520,17 @@ ftq_preflight <- function(manifest,
   }
   add_path_check("fnode", m$fnode)
   add_path_check("tractogram", m$tractogram)
-  add("tractogram_extension_trk", "warning", grepl("\\.trk$", tolower(m$tractogram)),
-      m$tractogram)
+  add("tractogram_format_supported", "error",
+      grepl("\\.(trk|tck)$", tolower(m$tractogram)), m$tractogram)
+  if (is_tck && file.exists(m$tractogram)) {
+    tck_header <- tryCatch(
+      ftq_read_tractogram(m$tractogram, reader = "stream"),
+      error = function(e) e
+    )
+    add("tck_header_readable", "error", !inherits(tck_header, "error"),
+        if (inherits(tck_header, "error")) conditionMessage(tck_header) else
+          "MRtrix TCK header and payload offset are valid; payload integrity is checked while reading.")
+  }
   add("track_reader_supported", "error", m$track_reader %in% c("auto", "memory", "stream"),
       paste("track_reader =", m$track_reader))
   add("track_chunk_size_positive", "error",
@@ -496,13 +552,13 @@ ftq_preflight <- function(manifest,
   } else {
     can_context <- !identical(m$context_source, "none") &&
       isTRUE(m$tractogram_context$enabled) &&
-      grepl("\\.trk$", tolower(m$tractogram))
+      grepl("\\.(trk|tck)$", tolower(m$tractogram))
     if (can_context) {
       add("spatial_context_fallback_available", "recommendation", TRUE,
           "No anatomical background supplied; reports will use tractogram-derived density context when generated. Anatomy remains recommended for publication figures.")
     } else {
       add("spatial_context_map_only", "recommendation", FALSE,
-          "No anatomical background supplied and no .trk-derived context is available; reports will use map-only spatial figures.")
+          "No anatomical background supplied and no supported tractogram-derived context is available; reports will use map-only spatial figures.")
     }
   }
   for (path in ftq_expected_paths(m$expected)) {
@@ -665,7 +721,8 @@ ftq_preflight <- function(manifest,
         m$fnode,
         m[["local"]],
         "fnode",
-        "local"
+        "local",
+        spatial_units_to_mm = is_tck
       )
       add("local_dims_match_fnode", "error", isTRUE(local_grid$dims_match), local_grid$detail)
       if (isTRUE(local_grid$dims_match)) {
@@ -714,7 +771,10 @@ ftq_preflight <- function(manifest,
             "; dimensionality = ", info$dimensionality
           )
         )
-        target_grid <- ftq_preflight_grid_check(m$fnode, m$target_paths[[i]], "fnode", paste0("target:", label))
+        target_grid <- ftq_preflight_grid_check(
+          m$fnode, m$target_paths[[i]], "fnode", paste0("target:", label),
+          spatial_units_to_mm = is_tck
+        )
         add(paste0("target_dims_match_fnode:", label), "error", isTRUE(target_grid$dims_match), target_grid$detail)
         if (isTRUE(target_grid$dims_match)) {
           add_affine_grid_check(
@@ -786,7 +846,8 @@ ftq_preflight <- function(manifest,
         m$fnode,
         m$endpoint_context_paths[[i]],
         "fnode",
-        paste0("endpoint_context:", label)
+        paste0("endpoint_context:", label),
+        spatial_units_to_mm = is_tck
       )
       add(paste0("endpoint_context_dims_match_fnode:", label), "error",
           isTRUE(context_grid$dims_match), context_grid$detail)
@@ -1648,11 +1709,11 @@ ftq_run_tractogram_context <- function(m, result, overwrite) {
   has_background <- !is.null(m$background_image) && file.exists(m$background_image)
   if (has_background && m$context_source %in% c("auto", "anatomy")) return(NULL)
   should_generate <- identical(m$context_source, "tractogram") ||
-    (identical(m$context_source, "auto") && !has_background && grepl("\\.trk$", tolower(m$tractogram)))
+    (identical(m$context_source, "auto") && !has_background && grepl("\\.(trk|tck)$", tolower(m$tractogram)))
   if (!should_generate) return(NULL)
-  if (!grepl("\\.trk$", tolower(m$tractogram))) {
+  if (!grepl("\\.(trk|tck)$", tolower(m$tractogram))) {
     if (identical(m$context_source, "tractogram")) {
-      stop("Tractogram-derived context requires a .trk tractogram.")
+      stop("Tractogram-derived context requires a .trk or .tck tractogram.")
     }
     return(NULL)
   }
@@ -3142,7 +3203,7 @@ ftq_report_preflight_summary <- function(preflight) {
       "local_search_spatial_units_known)$"
     ),
     "Tractogram reader" =
-      "^(tractogram_extension_trk|track_reader_supported|track_chunk_size_positive)$"
+      "^(tractogram_format_supported|tck_header_readable|tck_world_coordinate_mapping|tck_spatial_geometry:.*|track_reader_supported|track_chunk_size_positive)$"
   )
   rows <- lapply(names(groups), function(label) {
     selected <- grepl(groups[[label]], checks$check, perl = TRUE)
@@ -3363,7 +3424,11 @@ ftq_write_html_report <- function(path,
       }),
       "<br><b>Reverse streamlines:</b> ", esc(ftq_value(manifest$reverse_streamlines, FALSE)),
       "<br><b>Discretization:</b> ", esc(paste(manifest$discretization, collapse = ",")),
+      "<br><b>Tractogram format:</b> ", esc(ftq_value(manifest$tractogram_format, "Not recorded")),
       "<br><b>Track space:</b> ", esc(manifest$track_space),
+      if (identical(manifest$tractogram_format, "tck")) {
+        "<br><b>Coordinate mapping:</b> native TCK RAS+ world millimeters mapped through the declared NIfTI affine; no axis flips or overlap-based orientation selection."
+      } else "",
       "<br><b>Output directory:</b> ", esc(manifest$output_dir),
       "<br><b>Report axial slices (one-based indices):</b> ",
       esc(if (is.null(manifest$report$slices)) "Automatic selection" else paste(manifest$report$slices, collapse = ", ")),

@@ -10,6 +10,9 @@
 #'    using the selected target-assignment method.
 #'
 #' Coordinate handling notes:
+#' - Native MRtrix TCK objects use RAS+ world millimetres and the declared NIfTI
+#'   transform. No overlap-based space or reflection search is performed. The
+#'   reference must declare spatial units and a valid, unambiguous qform/sform.
 #' - Some tractography encodes voxel indices at a 0.1 scale ("vox10"): multiply
 #'   coordinates by 10 before discretization.
 #' - Some datasets require axis flips (e.g., flip_z) to align coordinate conventions
@@ -31,8 +34,9 @@
 #'   `fNode` grid or an n x 3 coordinate matrix/data frame satisfying the same
 #'   coordinate checks as `localROI`.
 #' @param cNode_labels Character vector of names for cNodes (same length/order as list).
-#' @param all_tracks Tractography object as read by freesurferformats::read.dti.trk(),
-#'   an internal streaming `.trk` object, or a list of tracks (each track either
+#' @param all_tracks Tractography object as read by freesurferformats::read.dti.trk()
+#'   or freesurferformats::read.dti.tck(), an internal streaming `.trk` or `.tck`
+#'   object, or a list of tracks (each track either
 #'   list(num_points, coords) or an n x 3 matrix).
 #' @param focal_threshold "nonzero" (default) or numeric threshold for ROI voxels.
 #' @param discretization Discretization method(s) used by iso_tracks() when mapping
@@ -60,23 +64,30 @@
 #'   affine before converting world coordinates to ROI voxel indices.
 #'   `"world"` and TrackVis affine outputs are interpreted as millimetres and
 #'   converted to the reference NIfTI's declared native spatial unit.
+#'   Recognized TCK objects accept only `"auto"` or `"world"`, both of which use
+#'   the format's fixed RAS+ world-millimetre convention.
 #' @param ref_image Reference image used when `track_space` is `"world"` or
 #'   `"trackvis"`, considered by `"auto"`, and used for `"local_search"`
 #'   geometry. If NULL, falls back to `fNode`. An explicitly used reference
 #'   must have the focal dimensions and, when both objects declare a valid
 #'   qform/sform, the same unit-normalized affine/grid.
+#'   TCK requires a declared qform or sform and known spatial units; conflicting
+#'   coded transforms are rejected rather than selected by overlap.
 #' @param auto_n Number of tracks to sample when selecting mapping/flips. Default 200.
 #' @param axis_flip Logical length-3 vector c(flip_x, flip_y, flip_z). If not supplied,
 #'   flips are searched automatically, but analysis stops if the best candidate
 #'   would reflect any axis. Verify anatomical alignment and explicitly set
 #'   `track_space` and `axis_flip` before continuing. If supplied, the provided
 #'   flips are used; they remain the caller's alignment decision.
+#'   TCK objects accept only no flips; apply intended registration upstream.
 #' @param track_affine Optional 4x4 affine that maps raw track coordinates to
 #'   world coordinates. If omitted and `all_tracks` has a TrackVis
 #'   `header$vox2ras`, that header affine is used.
+#'   An explicit value is not accepted for recognized TCK objects.
 #' @param track_voxel_size Optional numeric length-3 TrackVis header voxel sizes
 #'   in mm. Required for `track_space = "voxelmm"`; inferred from
 #'   `all_tracks$header` when available.
+#'   An explicit value is not accepted for recognized TCK objects.
 #' @param backend Counting backend. `"r"` uses the reference R implementation.
 #'   `"cpp"` uses the compiled backend when available. `"auto"` uses the
 #'   compiled backend when installed and falls back to the reference R backend.
@@ -209,6 +220,39 @@ FibrTraQ <- function(fNode,
     stop("axis_flip must be a logical vector of length 3 with no missing values: c(flip_x, flip_y, flip_z).")
   }
 
+  input_format <- ftq_track_format(all_tracks)
+  tck_geometry <- NULL
+  if (identical(input_format, "tck")) {
+    if (!is.null(track_affine) || !is.null(track_voxel_size)) {
+      stop("TCK coordinates are already in RAS+ world millimetres; ",
+           "track_affine and track_voxel_size must be NULL.", call. = FALSE)
+    }
+    settings <- ftq_tck_coordinate_settings(
+      track_space, if (axis_flip_user) axis_flip else NULL,
+      if (is.null(ref_image)) fNode else ref_image
+    )
+    track_space <- settings$track_space
+    axis_flip <- settings$axis_flip
+    axis_flip_user <- TRUE
+    ref_image <- settings$reference
+    tck_geometry <- settings$metadata
+    # Validate every supplied image's geometry before any coordinate mapping.
+    # Plain coordinate arrays retain the explicit reference-grid contract.
+    images <- c(list(fNode = fNode), cNode_list,
+                if (!is.null(localROI)) list(localROI) else list(),
+                endpoint_context_list)
+    for (image in images) {
+      if (inherits(image, "niftiImage")) {
+        ftq_tck_validate_reference(image, "ROI image")
+        if (!identical(as.integer(dim(image)), as.integer(dim(ref_image))) ||
+            !ftq_local_search_affine_equal(image, ref_image)) {
+          stop("TCK ROI images must use the same dimensions and unit-normalized ",
+               "affine/grid as the reference image.", call. = FALSE)
+        }
+      }
+    }
+  }
+
   local_roi_defaulted_to_focal <- is.null(localROI)
   if (is.null(localROI)) localROI <- fNode
   if (length(cNode_list) != length(cNode_labels)) {
@@ -282,32 +326,32 @@ FibrTraQ <- function(fNode,
   local_coords   <- iso_coords(localROI, threshold = focal_threshold)
   cNode_coords_list <- lapply(cNode_list, iso_coords, threshold = focal_threshold)
 
-  # Track normalization: accept an in-memory TRK object/list or a stream object.
+  # Track normalization: accept a supported in-memory object/list or stream.
   track_list <- NULL
   track_stream <- NULL
-  if (inherits(all_tracks, "ftq_trk_stream")) {
+  if (ftq_is_track_stream(all_tracks)) {
     track_stream <- all_tracks
-    if (is.null(track_affine)) {
+    if (!identical(input_format, "tck") && is.null(track_affine)) {
       track_affine <- ftq_trackvis_affine(track_stream$header)
     }
-    if (is.null(track_voxel_size)) {
+    if (!identical(input_format, "tck") && is.null(track_voxel_size)) {
       track_voxel_size <- ftq_trackvis_voxel_size(track_stream$header)
     }
   } else if (is.list(all_tracks) && !is.null(all_tracks$tracks) && is.list(all_tracks$tracks)) {
-    if (is.null(track_affine)) {
+    if (!identical(input_format, "tck") && is.null(track_affine)) {
       track_affine <- ftq_trackvis_affine(all_tracks$header)
     }
-    if (is.null(track_voxel_size)) {
+    if (!identical(input_format, "tck") && is.null(track_voxel_size)) {
       track_voxel_size <- ftq_trackvis_voxel_size(all_tracks$header)
     }
     track_list <- all_tracks$tracks
   } else if (is.list(all_tracks)) {
     track_list <- all_tracks
   } else {
-    stop("all_tracks must be a freesurferformats::read.dti.trk() object (with $tracks) or a list of tracks.")
+    stop("all_tracks must be a TRK/TCK object with $tracks, a supported stream object, or a list of tracks.")
   }
   sample_tracks <- if (!is.null(track_stream)) {
-    ftq_trk_stream_sample(track_stream, auto_n)
+    ftq_track_stream_sample(track_stream, auto_n)
   } else {
     if (!length(track_list)) stop("all_tracks contains no tracks.")
     track_list[seq_len(min(auto_n, length(track_list)))]
@@ -315,14 +359,13 @@ FibrTraQ <- function(fNode,
   if (!length(sample_tracks)) stop("all_tracks contains no tracks.")
 
   n_tracks <- if (!is.null(track_stream)) {
-    n <- as.integer(track_stream$header$n_count)
-    if (is.na(n) || n <= 0L) NA_integer_ else n
+    ftq_track_count(track_stream)
   } else {
     length(track_list)
   }
   iterate_tracks <- function(callback) {
     if (!is.null(track_stream)) {
-      ftq_trk_stream_iterate(track_stream, callback = callback, chunk_size = track_stream$chunk_size)
+      ftq_track_stream_iterate(track_stream, callback = callback, chunk_size = track_stream$chunk_size)
     } else {
       callback(track_list, 1L, length(track_list))
       invisible(length(track_list))
@@ -618,7 +661,9 @@ FibrTraQ <- function(fNode,
   space_used <- track_space
   flip_used <- axis_flip
   mapping_scores <- NULL
-  mapping_selection_rule <- "pinned"
+  mapping_selection_rule <- if (identical(input_format, "tck")) {
+    "tck_world_ras_mm_from_nifti_affine"
+  } else "pinned"
 
   if (length(spaces) == 1L && axis_flip_user) {
     # Fully pinned: no detection
@@ -1210,6 +1255,10 @@ FibrTraQ <- function(fNode,
 			  }
 		  attr(out_df, "fibrtraq_local_roi_defaulted_to_focal") <- local_roi_defaulted_to_focal
   attr(out_df, "fibrtraq_track_space") <- space_used
+  if (identical(input_format, "tck")) {
+    attr(out_df, "fibrtraq_tractogram_format") <- input_format
+    attr(out_df, "fibrtraq_coordinate_geometry") <- tck_geometry
+  }
   attr(out_df, "fibrtraq_track_voxel_size") <- track_voxel_size
   attr(out_df, "fibrtraq_axis_flip") <- as.logical(flip_used)
   attr(out_df, "fibrtraq_discretization") <- methods

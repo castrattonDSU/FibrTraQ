@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "dataset_id": "neurodesk-btc-preop-CON02-native-tck",
+  "subject": "sub-CON02",
+  "biological_subjects": 1,
+  "expected_streamlines": 10000,
+  "accessed_date": "2026-11-12",
+  "purpose": "Public human native-TCK interoperability demonstration; computational reruns are not additional biological samples.",
+  "limitations": [
+    "The published 10000-streamline subset is not a whole-population or million-streamline performance validation.",
+    "Tissue masks partitioned at scanner-world x=0 are geometric demonstration regions, not validated anatomical hemispheres or atlas parcels.",
+    "Format and backend agreement do not establish tractography ground-truth accuracy or biological connectivity.",
+    "Counts are unweighted; no SIFT2 weights are applied."
+  ],
+  "license": {
+    "processed_assets": "MIT",
+    "processed_attribution": "Neurodesk Organisation; MRtrix Part 3 tutorial by Monika Doerig",
+    "underlying_data": "CC0",
+    "processed_license_url": "https://huggingface.co/datasets/neurodeskorg/neurodeskedu/blob/ad6affdfd094070654595a21af05fb26d06fd273/README.md",
+    "underlying_license_url": "https://raw.githubusercontent.com/OpenNeuroDatasets/ds001226/master/dataset_description.json",
+    "redistribution_note": "Preserve the source MIT notice when redistributing processed tutorial assets. This script downloads them separately; imaging data are not bundled with FibrTraQ."
+  },
+  "provenance": {
+    "tutorial_url": "https://neurodesk.org/edu/examples/diffusion-imaging/mrtrix-3/",
+    "archived_notebook_doi": "10.5281/zenodo.23201854",
+    "archived_notebook_date": "2026-10-07",
+    "source_dataset_doi": "10.18112/openneuro.ds001226.v5.0.0",
+    "source_version_caveat": "The DOI cites the current public source dataset version. The tutorial identifies BTC_preop sub-CON02 but does not establish the exact originating OpenNeuro snapshot. Reproduction is pinned to the processed tutorial assets below, not an asserted derivation from OpenNeuro v5.0.0.",
+    "asset_repository": "neurodeskorg/neurodeskedu",
+    "asset_revision": "ad6affdfd094070654595a21af05fb26d06fd273",
+    "pairing": "The archived executed tutorial explicitly pairs the three named assets below.",
+    "tractography": "MRtrix3 3.0.4, iFOD2 with ACT; tckgen selected 1000000 streamlines, then tckedit selected the published 10000-streamline subset.",
+    "coordinates": "Native TCK RAS+ world millimetres; published GM and GM/WM interface were coregistered to diffusion physical space."
+  },
+  "sources": [
+    {
+      "role": "native_tractogram",
+      "filename": "tracks_10k_6fed19354195.tck",
+      "bytes": 3386652,
+      "sha256": "6fed19354195001810e2402f21ddb8bf13628b258a14c882784cde2b53fc07fe",
+      "url": "https://huggingface.co/datasets/neurodeskorg/neurodeskedu/resolve/ad6affdfd094070654595a21af05fb26d06fd273/data/examples/diffusion_imaging/MRtrix_3/tracks_10k_6fed19354195.tck"
+    },
+    {
+      "role": "cortical_gm",
+      "filename": "5tt_coreg_gm_8ee71505c3a7.mif",
+      "bytes": 15074040,
+      "sha256": "8ee71505c3a7a7dbebe6171c9465649f97399c6df6be8d751ec836a411c0ec2b",
+      "url": "https://huggingface.co/datasets/neurodeskorg/neurodeskedu/resolve/ad6affdfd094070654595a21af05fb26d06fd273/data/examples/diffusion_imaging/MRtrix_3/5tt_coreg_gm_8ee71505c3a7.mif"
+    },
+    {
+      "role": "gm_wm_interface",
+      "filename": "gmwmSeed_coreg_746969289733.mif",
+      "bytes": 15074020,
+      "sha256": "74696928973391468f741807abb4b1ec611b3d3bb809396d9b7d105cd5b60710",
+      "url": "https://huggingface.co/datasets/neurodeskorg/neurodeskedu/resolve/ad6affdfd094070654595a21af05fb26d06fd273/data/examples/diffusion_imaging/MRtrix_3/gmwmSeed_coreg_746969289733.mif"
+    }
+  ],
+  "mask_contract": {
+    "threshold": 0.5,
+    "split_plane": "RAS+ scanner-world x=0 mm",
+    "focal-left-interface.nii.gz": "GM/WM interface >0.5 and world x<0; label negative_x_interface",
+    "target-right-gm.nii.gz": "Cortical GM >0.5 and world x>=0; label positive_x_cortical_GM",
+    "target-left-gm.nii.gz": "Cortical GM >0.5 and world x<0, excluding focal mask; label negative_x_cortical_GM"
+  },
+  "citations": [
+    {"title": "Neurodesk Notebook: MRtrix_3", "author": "Monika Doerig", "year": 2026, "doi": "10.5281/zenodo.23201854"},
+    {"title": "BTC_preop", "authors": ["Hannelore Aerts", "Daniele Marinazzo"], "version": "5.0.0", "doi": "10.18112/openneuro.ds001226.v5.0.0"},
+    {"title": "MRtrix3: A fast, flexible and open software framework for medical image processing and visualisation", "authors": "Tournier et al.", "year": 2019, "journal": "NeuroImage", "volume": "202", "article": "116137", "doi": "10.1016/j.neuroimage.2019.116137"}
+  ]
+}

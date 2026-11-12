@@ -42,8 +42,8 @@ ftq_run_regional_study(
 )
 }
 \arguments{
-\item{tractograms}{Named character vector or list of tractogram paths, with
-one entry per subject.}
+\item{tractograms}{Named character vector or list of \code{.trk} or \code{.tck}
+tractogram paths, with one entry per subject.}
 
 \item{region_masks}{Named list with one element per subject. Each subject
 element must be a named character vector or list of regional mask paths.
@@ -53,7 +53,9 @@ Every subject must provide the same region labels.}
 
 \item{reference_images}{Optional named character vector or list of reference
 image paths. Three-dimensional images are used directly. Four-dimensional
-images are reduced to a mean low-b image using \code{bvals}.}
+images are reduced to a mean low-b image using \code{bvals}. For TCK, the focal
+NIfTI supplies the coordinate reference when an image is omitted. Independent
+anatomical references remain strongly recommended for spatial review.}
 
 \item{bvals}{Optional named character vector/list of b-value file paths, or a
 named list of numeric b-value vectors. Required for each four-dimensional
@@ -86,15 +88,17 @@ image affine is known not to define the analysis grid. A named
 subject-specific logical vector/list is accepted.}
 
 \item{track_space}{Coordinate-space setting passed to \code{\link[=ftq_run]{ftq_run()}}. Supply one
-value for all subjects or a named subject-specific vector/list.}
+value for all subjects or a named subject-specific vector/list. Native TCK
+accepts only \code{"auto"} or \code{"world"}; both select world coordinates directly.}
 
 \item{discretization}{Discretization setting passed to \code{\link[=ftq_run]{ftq_run()}}. Supply
 one value/vector for all subjects or a named subject-specific list.}
 
-\item{axis_flip}{Optional three-value logical axis flip. When omitted,
-automatic mapping stops if its preferred candidate would reflect an axis.
-Verify alignment before explicitly setting \code{track_space} and \code{axis_flip}. A named
-subject-specific list is also accepted.}
+\item{axis_flip}{Optional three-value logical axis flip. For TRK, when
+omitted, automatic mapping stops if its preferred candidate would reflect
+an axis. Verify alignment before explicitly setting \code{track_space} and
+\code{axis_flip}. A named subject-specific list is also accepted. Native TCK
+permits only \code{NULL} or three \code{FALSE} values.}
 
 \item{focal_assignment_mode}{Focal assignment mode passed to \code{\link[=ftq_run]{ftq_run()}}.}
 
@@ -103,7 +107,8 @@ subject-specific list is also accepted.}
 
 \item{endpoint_analysis}{Endpoint analysis mode passed to \code{\link[=ftq_run]{ftq_run()}}.}
 
-\item{track_reader}{Tractogram reader used by each run.}
+\item{track_reader}{Tractogram reader used by each run. \code{"auto"} streams both
+TRK and TCK by default; \code{"stream"} and \code{"memory"} may be selected explicitly.}
 
 \item{track_chunk_size}{Streamline chunk size used by the streaming reader.}
 
@@ -163,4 +168,9 @@ viewer, and write a study-level report index. Subject identifiers remain
 character labels, including leading zeros. Subject and region labels must
 produce distinct output folders after filename sanitization and case folding
 so the result bundle also works on Windows.
+}
+\details{
+Native \code{.tck} inputs use RAS+ world coordinates in millimeters and require
+valid NIfTI geometry. See \code{\link[=ftq_run_files]{ftq_run_files()}} for TCK format and spatial
+requirements. The same reports, maps and viewer are generated for both formats.
 }

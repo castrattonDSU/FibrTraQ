@@ -51,6 +51,7 @@ rather than private absolute paths whenever possible.
 | --- | --- | --- | --- |
 | Complete | Bundled known-answer example | Seven exact scientific tables, report generation, integrity inventory, and automated tests | Primary user-runnable software-reproducibility check |
 | Complete, historical scope | dTOR-985 normative connectome | Production-scale R/C++ comparison for per-voxel, RSC, and fate outputs on 11,820,000 streamlines | Backend equivalence and performance evidence for established core outputs |
+| Complete, development scope | Neurodesk / BTC_preop sub-CON02 native TCK | Native reader/backend/reversal checks pass; exact converted-TRK parity fails with all differences accounted for in the [evidence record](native-tck-evidence.md) | One-human-subject native-TCK interoperability demonstration |
 | Template only | ISMRM 2015 Tractography Challenge | Manifest-generation and suite-runner support; no final release evidence is claimed here | Controlled tractography benchmark |
 | Registry only | TractoInferno / OpenNeuro ds003900 | Candidate source and setup notes only | Real human, multi-site generalization |
 | Template only | FiberCup phantom | Candidate manifest and setup notes only | Independent controlled phantom |
@@ -118,6 +119,69 @@ Rscript "$(Rscript -e 'cat(system.file("scripts", "fibrtraq-validation-suite.R",
 ```
 
 Use `--preflight-only` first when setting up a new dataset.
+
+## Optional Native TCK Public-Data Check
+
+This procedure uses the Neurodesk MRtrix tutorial's published
+10,000-streamline `.tck` subset from one human control, `sub-CON02`, together
+with its paired cortical gray matter and gray/white matter interface images.
+The [pinned source specification](tck-public-sources.json) records the exact
+asset revision, filenames, SHA-256 checksums, citations, licenses and provenance
+limits. The [development validation record](native-tck-evidence.md) distinguishes
+exact native-reader/backend agreement from the observed TRK conversion limit.
+
+Install the FibrTraQ revision containing native TCK support first. Preparation
+also requires Python with **NiBabel and NumPy**, plus an existing **MRtrix
+`mrconvert`** executable. These are optional validation tools, not dependencies
+for installing or running the R package.
+The additional precision audit requires R 4.5.0 or later for the built-in
+`tools::sha256sum()` provenance check; this does not change the package's R
+version requirement.
+
+From the repository root, replace the two directory paths and the `mrconvert`
+path below. Use a new preparation root and a new results directory:
+
+```bash
+python3 inst/scripts/fibrtraq-tck-public-prepare.py \
+  --output-root "/path/to/tck-public-inputs" \
+  --mrconvert "/path/to/mrtrix/bin/mrconvert"
+
+Rscript inst/scripts/fibrtraq-tck-public-validation.R \
+  "/path/to/tck-public-inputs/prepared" \
+  "/path/to/new-tck-public-results"
+```
+
+Preparation preserves the downloaded files in `raw/`, checks their pinned
+checksums, and writes derived NIfTI inputs, an equivalent comparison `.trk`
+and `provenance.json` into `prepared/`. The original native `.tck` is used for
+the TCK analysis. The R runner writes reports and comparison evidence,
+including `validation-results.json` and `parity-checks.csv`, in the results
+directory. Review those records and the generated reports before accepting
+the run as evidence.
+
+For these pinned files, the strict TCK-versus-TRK comparison exits nonzero:
+Float32 conversion changes three rounded voxel paths, including one focal
+assignment. The native execution/invariance group passes separately. Preserve
+both outcomes, then run the exact accounting audit in a new directory:
+
+```bash
+Rscript inst/scripts/fibrtraq-tck-precision-audit.R \
+  "/path/to/tck-public-inputs/prepared" \
+  "/path/to/new-tck-public-results" \
+  "/path/to/new-tck-precision-audit"
+```
+
+The audit checks whether the measured conversion effects explain every changed
+count and density value. It does not relax count tolerances or relabel the
+failed exact comparison as a pass. Archive its records with the strict results.
+
+The demonstration masks use tissue values above 0.5 and a split at scanner-world
+`x = 0 mm`. They are geometric regions, not validated hemispheric labels or
+atlas parcels; the reference is a cortical gray matter probability image,
+not a T1 intensity image. Format, reader and backend comparisons assess
+software interoperability, not tractography or connectivity ground truth.
+Computational reruns remain **one biological subject**. Counts are unweighted;
+no SIFT2 weights are applied.
 
 ## ISMRM 2015 Ground-Truth Manifests
 

@@ -2,11 +2,17 @@
 
 The `Windows report browser check` workflow builds and installs the checked-out
 candidate on a native Windows runner. It uses only the package-owned synthetic
-example, copies its complete results into a folder containing spaces, `#`, `%`
-and Unicode, then opens the copied HTML directly with `file://` URLs in Chromium.
+example in a two-format matrix (`trk`, `tck`), copies each complete result
+bundle into a folder containing spaces, `#`, `%` and Unicode, then opens the
+copied HTML directly with `file://` URLs in Chromium.
 The original outputs remain intact. No web server or external data are needed.
 
-The check verifies seven scientific tables and 18 declared values before
+The TCK case encodes the known synthetic points as native world-millimeter
+coordinates and uses copies of the fixture images with declared NIfTI geometry.
+Only format-specific provenance and copied-image checksums differ in its
+expected tables; the bundled inputs and scientific values remain unchanged.
+
+Each format verifies the same seven scientific tables and 18 declared values before
 testing local links, fragment targets, loaded report images, navigation from
 the index, CSV downloads, PNG opening, and actual canvas rendering during drag, edge
 roll, zoom, reset, and a layer toggle. It checks advanced path/endpoint controls
@@ -22,7 +28,7 @@ linked URL with `image/png` content type and decoded dimensions matching the
 PNG header. It records which behavior occurred and captures an opened image;
 file existence alone cannot satisfy this check.
 
-The workflow artifact contains the synthetic report folders, input manifest,
+Each format's workflow artifact contains the synthetic report folders, input manifest,
 screenshots, and `browser-evidence/browser-check.json`. Review the screenshots
 before accepting visual layout. A successful automated check establishes the
 listed browser behaviors on that recorded Windows/browser/package revision;
@@ -35,9 +41,13 @@ in a fresh session, install Node.js 24, then from this directory run:
 ```powershell
 npm ci --ignore-scripts
 npx playwright install chromium
-Rscript --vanilla generate-fixture.R "C:/fibrtraq-browser-review"
-node report-browser-check.cjs "C:/fibrtraq-browser-review/browser-fixture.json"
+Rscript --vanilla generate-fixture.R "C:/fibrtraq-browser-review-trk" trk
+node report-browser-check.cjs "C:/fibrtraq-browser-review-trk/browser-fixture.json"
+Rscript --vanilla generate-fixture.R "C:/fibrtraq-browser-review-tck" tck
+node report-browser-check.cjs "C:/fibrtraq-browser-review-tck/browser-fixture.json"
 ```
 
-The output directory must be new. The browser script refuses non-Windows hosts
+The optional second `generate-fixture.R` argument selects `trk` or `tck`;
+omitting it retains the `trk` default. Each output directory must be new.
+The browser script refuses non-Windows hosts
 so a different operating system cannot be mistaken for Windows evidence.

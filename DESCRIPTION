@@ -1,7 +1,7 @@
 Package: FibrTraQ
 Type: Package
 Title: Voxel-Resolved Focal-ROI Target Profiling of Diffusion Tractograms
-Version: 0.3.1
+Version: 0.3.2.9000
 Authors@R: c(
     person("Chase", "Stratton", , "cstratton@desu.edu", role = c("aut", "cre")),
     person("Nicholas", "Cottam", role = "aut")

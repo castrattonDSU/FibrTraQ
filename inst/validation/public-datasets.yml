@@ -8,7 +8,7 @@ datasets:
       submissions: https://zenodo.org/records/840086
     notes:
       - Setup assets do not constitute a completed FibrTraQ release-validation result.
-      - Use downloaded challenge tractograms or locally generated tractography converted to TrackVis .trk format.
+      - Use downloaded challenge tractograms or locally generated tractography in supported TrackVis .trk or MRtrix .tck format, with valid matching image geometry.
       - Define focal and target ROIs from challenge bundle/region masks in the same voxel grid.
       - Include known-good FibrTraQ outputs in the manifest once the first accepted run is established.
 
@@ -23,8 +23,30 @@ datasets:
     notes:
       - This entry records a candidate dataset; no completed FibrTraQ release-validation result is claimed.
       - Select 3 to 5 subjects across different sites for publication validation.
-      - Convert reference streamlines to .trk if they are stored in another format.
+      - Native .tck reference streamlines are supported without conversion to .trk; use matching NIfTI geometry with declared units and valid, consistent qform/sform transforms.
       - Use anatomically meaningful focal/target masks from the derivatives or registered atlas masks.
+
+  - id: neurodesk_btc_preop_con02_native_tck
+    name: Neurodesk MRtrix tutorial / BTC_preop sub-CON02 native TCK
+    evidence_status: completed_native_tck_interoperability
+    role: One-human-control interoperability demonstration using a published 10000-streamline native TCK subset and paired tissue images.
+    source_specification: tck-public-sources.json
+    preparation_script: ../scripts/fibrtraq-tck-public-prepare.py
+    validation_script: ../scripts/fibrtraq-tck-public-validation.R
+    precision_audit_script: ../scripts/fibrtraq-tck-precision-audit.R
+    evidence_record: native-tck-evidence.md
+    urls:
+      tutorial: https://neurodesk.org/edu/examples/diffusion-imaging/mrtrix-3/
+      archived_notebook: https://doi.org/10.5281/zenodo.23201854
+      pinned_assets: https://huggingface.co/datasets/neurodeskorg/neurodeskedu/tree/ad6affdfd094070654595a21af05fb26d06fd273
+    notes:
+      - The 0.3.2.9000 development run passed 58 native execution/invariance checks and 72 exact causal-accounting checks; this is not a cross-platform release certification.
+      - Exact TCK-versus-converted-TRK parity failed because Float32 conversion changed three rounded voxel paths, including one focal assignment; failed comparisons remain recorded without count tolerances.
+      - The source specification records asset checksums, license terms, citations and the unconfirmed originating OpenNeuro snapshot.
+      - Preparation uses NiBabel, NumPy and an existing MRtrix mrconvert executable only for this optional validation procedure; they are not R-package dependencies.
+      - Tissue thresholds and a scanner-world x=0 split define geometric demonstration regions, not validated hemispheric labels or atlas parcels.
+      - Format and backend agreement assess software interoperability, not connectivity ground truth; repeated computations remain one biological subject.
+      - Counts are unweighted; no SIFT2 weights are applied.
 
   - id: dtor985
     name: dTOR-985 normative structural connectome

@@ -19,7 +19,7 @@ ftq_tractogram_context(
 )
 }
 \arguments{
-\item{tractogram}{TrackVis \code{.trk} file.}
+\item{tractogram}{TrackVis \code{.trk} or MRtrix \code{.tck} file.}
 
 \item{template_image}{NIfTI/MGH image defining the output voxel grid.}
 
@@ -30,7 +30,9 @@ omitted, the template image directory is used.}
 
 \item{track_space}{Track coordinate space. Use the same setting as the
 FibrTraQ run whenever possible. \code{"voxelmm"} uses TrackVis header voxel
-sizes and the TrackVis corner-to-center convention.}
+sizes and the TrackVis corner-to-center convention. Native \code{.tck} files
+use RAS+ world millimeters; only \code{"auto"} or \code{"world"} with no axis flips
+is accepted, and the template/reference must declare valid spatial geometry.}
 
 \item{axis_flip}{Logical length-3 vector applied after discretization.}
 
@@ -52,7 +54,7 @@ A list with \code{density_image}, \code{summary_csv}, \code{metadata_json},
 \code{summary}, and \code{metadata}.
 }
 \description{
-Stream a TrackVis \code{.trk} file and build a discretized streamline-occupancy
+Stream a TrackVis \code{.trk} or MRtrix \code{.tck} file and build a streamline-occupancy
 density image on a reference voxel grid. This is a visualization and
 quality-control context only: it is not an anatomical image and must not be
 interpreted as brain, tissue, or lesion volume.

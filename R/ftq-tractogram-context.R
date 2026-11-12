@@ -1,6 +1,6 @@
 #' Build tractogram-derived spatial context for reports
 #'
-#' Stream a TrackVis `.trk` file and build a discretized streamline-occupancy
+#' Stream a TrackVis `.trk` or MRtrix `.tck` file and build a streamline-occupancy
 #' density image on a reference voxel grid. This is a visualization and
 #' quality-control context only: it is not an anatomical image and must not be
 #' interpreted as brain, tissue, or lesion volume.
@@ -8,14 +8,16 @@
 #' Each streamline contributes at most one count to a voxel under the selected
 #' stored-point or segment-interpolation sampling and discretization contract.
 #'
-#' @param tractogram TrackVis `.trk` file.
+#' @param tractogram TrackVis `.trk` or MRtrix `.tck` file.
 #' @param template_image NIfTI/MGH image defining the output voxel grid.
 #' @param output_dir Directory where a `context/` subdirectory is written. If
 #'   omitted, the template image directory is used.
 #' @param prefix Output filename prefix.
 #' @param track_space Track coordinate space. Use the same setting as the
 #'   FibrTraQ run whenever possible. `"voxelmm"` uses TrackVis header voxel
-#'   sizes and the TrackVis corner-to-center convention.
+#'   sizes and the TrackVis corner-to-center convention. Native `.tck` files
+#'   use RAS+ world millimeters; only `"auto"` or `"world"` with no axis flips
+#'   is accepted, and the template/reference must declare valid spatial geometry.
 #' @param axis_flip Logical length-3 vector applied after discretization.
 #' @param track_chunk_size Number of streamlines read per chunk.
 #' @param density_discretization Discretization used for the visualization
@@ -72,9 +74,6 @@ ftq_build_tractogram_context <- function(tractogram,
                                          write_sidecars = TRUE) {
   tractogram <- normalizePath(path.expand(tractogram), mustWork = TRUE)
   template_image <- normalizePath(path.expand(template_image), mustWork = TRUE)
-  if (!grepl("\\.trk$", tolower(tractogram))) {
-    stop("ftq_tractogram_context() currently requires a TrackVis .trk file.")
-  }
   track_space <- match.arg(track_space)
   density_discretization <- match.arg(density_discretization)
   streamline_voxelization_mode <- match.arg(streamline_voxelization_mode)
@@ -104,15 +103,29 @@ ftq_build_tractogram_context <- function(tractogram,
   if (length(dims) != 3L || anyNA(dims)) stop("template_image must be a 3D volume.")
   ref <- if (is.null(ref_image)) template else RNifti::readNifti(ref_image, internal = FALSE)
   density <- array(0, dim = dims)
-  stream <- ftq_trk_stream(tractogram, chunk_size = track_chunk_size)
-  track_affine <- ftq_trackvis_affine(stream$header)
-  track_voxel_size <- ftq_trackvis_voxel_size(stream$header)
-  selected_track_space <- ftq_qc_resolve_track_space(
-    track_space,
-    track_affine,
-    ref,
-    track_voxel_size = track_voxel_size
-  )
+  stream <- ftq_read_tractogram(tractogram, reader = "stream", chunk_size = track_chunk_size)
+  tractogram_format <- ftq_track_format(stream)
+  track_affine <- NULL
+  track_voxel_size <- NULL
+  coordinate_mapping <- NULL
+  if (identical(tractogram_format, "tck")) {
+    settings <- ftq_tck_coordinate_settings(track_space, axis_flip, ref)
+    ftq_tck_validate_reference(template, context = "template_image")
+    ftq_validate_direct_reference_grid(template, settings$reference, dims)
+    selected_track_space <- settings$track_space
+    axis_flip <- settings$axis_flip
+    ref <- settings$reference
+    coordinate_mapping <- settings$metadata
+  } else {
+    track_affine <- ftq_trackvis_affine(stream$header)
+    track_voxel_size <- ftq_trackvis_voxel_size(stream$header)
+    selected_track_space <- ftq_qc_resolve_track_space(
+      track_space,
+      track_affine,
+      ref,
+      track_voxel_size = track_voxel_size
+    )
+  }
 
   processed <- 0L
   mapped_errors <- 0L
@@ -145,7 +158,7 @@ ftq_build_tractogram_context <- function(tractogram,
     NULL
   }
 
-  ftq_trk_stream_iterate(
+  ftq_track_stream_iterate(
     stream,
     callback = function(chunk, start_index, end_index) {
       if (use_cpp_density) {
@@ -212,8 +225,8 @@ ftq_build_tractogram_context <- function(tractogram,
   occupied_voxels <- sum(density > 0)
   bbox_available <- all(is.finite(voxel_min)) && all(is.finite(voxel_max))
   bbox_world <- if (bbox_available) ftq_bbox_world(template, voxel_min, voxel_max) else rep(NA_real_, 6L)
-  declared <- as.integer(stream$header$n_count)
-  if (is.na(declared) || declared <= 0L) declared <- NA_integer_
+  declared <- ftq_track_count(stream)
+  if (is.na(declared) || declared < 0L) declared <- NA_integer_
 
   summary <- data.frame(
     processed_streamlines = as.numeric(processed),
@@ -247,6 +260,8 @@ ftq_build_tractogram_context <- function(tractogram,
     density_unit = "streamline occupancy per voxel",
     duplicate_point_policy = "Each streamline contributes at most once per voxel.",
     tractogram = tractogram,
+    tractogram_format = tractogram_format,
+    coordinate_mapping = coordinate_mapping,
     template_image = template_image,
     selected_track_space = selected_track_space,
     track_voxel_size_mm = as.numeric(track_voxel_size),

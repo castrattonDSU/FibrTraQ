@@ -77,7 +77,7 @@ that produces the preferred result.
 
 ## 4. Pin the supported mapping in the analysis
 
-After the source geometry and independent review support a mapping, set both
+For `.trk`, after the source geometry and independent review support a mapping, set both
 `track_space` and `axis_flip` explicitly in `ftq_run_files()`. Supported spaces
 are `"voxel"`, `"voxelmm"`, `"vox10"`, `"world"` and `"trackvis"`; consult
 `?FibrTraQ` for their definitions. Axis-flip entries correspond to the three
@@ -107,11 +107,27 @@ Record and pin `discretization` and the assignment/voxelization settings; they
 affect counts independently of orientation. Retain the settings justified by your
 analysis protocol rather than changing them to improve visual appearance.
 
-When flips are omitted, FibrTraQ stops before counting if its preferred
+For `.trk`, when flips are omitted, FibrTraQ stops before counting if its preferred
 automatic candidate reflects an axis. The error identifies the candidate; it
 does not certify it. Explicit reflections remain supported when independently
 justified. An automatic unreflected choice or explicitly supplied wrong mapping
 can still run, so **no flips is not a universal correction**.
+
+For native `.tck`, use the same file workflow with the `.tck` filename and
+`track_space = "auto"` or `"world"`. Leave `axis_flip = NULL` or set all three
+entries to `FALSE`. TCK coordinates are RAS+ world millimeters; the mapping is
+fixed by the NIfTI affine rather than selected by ROI overlap. Do not copy
+voxel-millimeter or flip settings from a `.trk` analysis into a TCK run.
+
+The reference NIfTI, or focal NIfTI when a reference is omitted, must declare
+spatial units and a valid, invertible qform or sform. Declared qform and sform
+transforms must agree when both are present. The run rejects missing units,
+missing/invalid transforms and conflicting forms before counting. These
+checks detect inconsistent metadata, but a consistent incorrect header still
+requires the independent review above. Negative axes and oblique orientations
+encoded by a valid affine are supported; no additional flips are needed.
+See [TCK inputs](advanced-workflows.md#mrtrix-tck-inputs) for the supported
+file encodings and geometry requirements.
 
 ## 5. Check the saved mapping and review the outputs
 

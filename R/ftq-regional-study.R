@@ -1,6 +1,6 @@
 #' Run one complete FibrTraQ analysis from files
 #'
-#' This is the simplest file-based FibrTraQ entry point. Supply one TrackVis
+#' This is the simplest file-based FibrTraQ entry point. Supply one TrackVis or MRtrix
 #' tractogram, one focal mask, one or more named target masks, and an output
 #' directory. The function runs the standard analysis and writes the static
 #' report, target report, endpoint tables, maps, interactive 3-D QC
@@ -12,7 +12,17 @@
 #' region labels must produce distinct output folders after filename sanitization
 #' and case folding, so the result bundle also works on Windows.
 #'
-#' @param tractogram Path to one TrackVis `.trk` file.
+#' Native `.tck` points are RAS+ world coordinates in millimeters. Their mapping
+#' uses the NIfTI affine without an orientation search. The reference image, or
+#' focal NIfTI when a reference is omitted, must declare spatial units and a
+#' valid, invertible qform or sform; declared forms must agree when both are
+#' present. Inputs are not automatically registered or resampled. Review
+#' alignment independently before interpreting results. Counts are unweighted;
+#' external SIFT2 weights are not applied.
+#'
+#' @param tractogram Path to one TrackVis `.trk` or MRtrix `.tck` file.
+#'   TCK supports uncompressed, single-file Float32/Float64 data in either byte
+#'   order. Compressed `.tck.gz` and external TCK payload files are unsupported.
 #' @param focal_mask Path to one binary focal-region mask.
 #' @param target_masks Named character vector or list of binary target-mask
 #'   paths, for example `c(cerebrum = "...", pontine = "...")`.
@@ -25,7 +35,9 @@
 #'   mask is used as the package's local-region default.
 #' @param reference_image Optional 3-D reference image, or a 4-D diffusion image
 #'   accompanied by `bvals`. The reference is used for coordinate conversion
-#'   when required and as the default report background.
+#'   when required and as the default report background. For TCK, the focal
+#'   NIfTI supplies the coordinate reference when this is omitted. An independent
+#'   anatomical reference remains strongly recommended for spatial review.
 #' @param bvals Optional b-value file path or numeric vector. Required when
 #'   `reference_image` or `background_image` is four-dimensional.
 #' @param background_image Optional anatomical image for reports and the 3-D
@@ -39,16 +51,19 @@
 #'   different affine may be copied to the focal-mask grid without resampling.
 #'   Leave this `FALSE` unless an independent geometry audit has established
 #'   voxel-index correspondence and the source image header is non-authoritative.
-#' @param track_space Coordinate-space setting passed to [ftq_run()].
+#' @param track_space Coordinate-space setting passed to [ftq_run()]. Native
+#'   TCK accepts `"auto"` or `"world"`; both use world coordinates deterministically.
 #' @param discretization Discretization setting passed to [ftq_run()].
-#' @param axis_flip Optional three-value logical axis flip. When omitted,
-#'   automatic mapping stops if its preferred candidate would reflect an axis.
-#'   Verify alignment before explicitly setting `track_space` and `axis_flip`.
+#' @param axis_flip Optional three-value logical axis flip. For TRK, when
+#'   omitted, automatic mapping stops if its preferred candidate would reflect
+#'   an axis. Verify alignment before explicitly setting `track_space` and
+#'   `axis_flip`. Native TCK permits only `NULL` or three `FALSE` values.
 #' @param focal_assignment_mode Focal assignment mode passed to [ftq_run()].
 #' @param streamline_voxelization_mode Streamline voxelization mode passed to
 #'   [ftq_run()].
 #' @param endpoint_analysis Endpoint analysis mode passed to [ftq_run()].
-#' @param track_reader Tractogram reader used by the run.
+#' @param track_reader Tractogram reader used by the run. `"auto"` streams both
+#'   TRK and TCK by default; `"stream"` and `"memory"` may be selected explicitly.
 #' @param track_chunk_size Streamline chunk size used by the streaming reader.
 #' @param backend Counting backend passed to [ftq_run()].
 #' @param write_maps Whether to write the standard NIfTI maps.
@@ -228,15 +243,21 @@ ftq_run_files <- function(
 #' produce distinct output folders after filename sanitization and case folding
 #' so the result bundle also works on Windows.
 #'
-#' @param tractograms Named character vector or list of tractogram paths, with
-#'   one entry per subject.
+#' Native `.tck` inputs use RAS+ world coordinates in millimeters and require
+#' valid NIfTI geometry. See [ftq_run_files()] for TCK format and spatial
+#' requirements. The same reports, maps and viewer are generated for both formats.
+#'
+#' @param tractograms Named character vector or list of `.trk` or `.tck`
+#'   tractogram paths, with one entry per subject.
 #' @param region_masks Named list with one element per subject. Each subject
 #'   element must be a named character vector or list of regional mask paths.
 #'   Every subject must provide the same region labels.
 #' @param output_dir Directory that will contain all derived study outputs.
 #' @param reference_images Optional named character vector or list of reference
 #'   image paths. Three-dimensional images are used directly. Four-dimensional
-#'   images are reduced to a mean low-b image using `bvals`.
+#'   images are reduced to a mean low-b image using `bvals`. For TCK, the focal
+#'   NIfTI supplies the coordinate reference when an image is omitted. Independent
+#'   anatomical references remain strongly recommended for spatial review.
 #' @param bvals Optional named character vector/list of b-value file paths, or a
 #'   named list of numeric b-value vectors. Required for each four-dimensional
 #'   reference or background image.
@@ -260,18 +281,21 @@ ftq_run_files <- function(
 #'   image affine is known not to define the analysis grid. A named
 #'   subject-specific logical vector/list is accepted.
 #' @param track_space Coordinate-space setting passed to [ftq_run()]. Supply one
-#'   value for all subjects or a named subject-specific vector/list.
+#'   value for all subjects or a named subject-specific vector/list. Native TCK
+#'   accepts only `"auto"` or `"world"`; both select world coordinates directly.
 #' @param discretization Discretization setting passed to [ftq_run()]. Supply
 #'   one value/vector for all subjects or a named subject-specific list.
-#' @param axis_flip Optional three-value logical axis flip. When omitted,
-#'   automatic mapping stops if its preferred candidate would reflect an axis.
-#'   Verify alignment before explicitly setting `track_space` and `axis_flip`. A named
-#'   subject-specific list is also accepted.
+#' @param axis_flip Optional three-value logical axis flip. For TRK, when
+#'   omitted, automatic mapping stops if its preferred candidate would reflect
+#'   an axis. Verify alignment before explicitly setting `track_space` and
+#'   `axis_flip`. A named subject-specific list is also accepted. Native TCK
+#'   permits only `NULL` or three `FALSE` values.
 #' @param focal_assignment_mode Focal assignment mode passed to [ftq_run()].
 #' @param streamline_voxelization_mode Streamline voxelization mode passed to
 #'   [ftq_run()].
 #' @param endpoint_analysis Endpoint analysis mode passed to [ftq_run()].
-#' @param track_reader Tractogram reader used by each run.
+#' @param track_reader Tractogram reader used by each run. `"auto"` streams both
+#'   TRK and TCK by default; `"stream"` and `"memory"` may be selected explicitly.
 #' @param track_chunk_size Streamline chunk size used by the streaming reader.
 #' @param backend Counting backend passed to [ftq_run()].
 #' @param write_maps Whether to write the standard NIfTI maps. Target-report

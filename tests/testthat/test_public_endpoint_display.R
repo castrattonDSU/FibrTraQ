@@ -20,13 +20,29 @@ ftq_public_endpoint_plot_capture <- function(env = parent.frame()) {
   captured$bars <- list()
   captured$labels <- character()
   captured$notes <- character()
+  captured$target_labels <- list()
+  captured$target_angles <- integer()
   original_barplot <- graphics::barplot
+  original_axis <- graphics::axis
   original_text <- graphics::text
   original_mtext <- graphics::mtext
   testthat::local_mocked_bindings(
     barplot = function(height, ...) {
       captured$bars[[length(captured$bars) + 1L]] <- height
+      args <- list(...)
+      if (!is.null(args$names.arg)) {
+        captured$target_labels[[length(captured$target_labels) + 1L]] <- args$names.arg
+        captured$target_angles <- c(captured$target_angles, args$las)
+      }
       original_barplot(height, ...)
+    },
+    axis = function(side, ...) {
+      args <- list(...)
+      if (side == 1 && !is.null(args$labels)) {
+        captured$target_labels[[length(captured$target_labels) + 1L]] <- args$labels
+        captured$target_angles <- c(captured$target_angles, args$las)
+      }
+      original_axis(side, ...)
     },
     text = function(x, y, labels, ...) {
       captured$labels <- c(captured$labels, rep_len(as.character(labels), max(length(x), length(y))))
@@ -111,5 +127,53 @@ test_that("penetration plots keep defined zero bins and mark absent intersection
   expect_true(all(is.na(captured$bars[[1L]][, 2L])))
   expect_true("NA" %in% captured$labels)
   expect_true(any(grepl("not distance in millimetres", captured$notes, fixed = TRUE)))
+  expect_identical(source, original)
+})
+
+test_that("all endpoint figures retain complete long target identities in readable labels", {
+  captured <- ftq_public_endpoint_plot_capture()
+  targets <- c("positive_x_cortical_GM", "negative_x_cortical_GM")
+  summary <- ftq_public_endpoint_plot_summary()
+  summary$target <- rep(targets, 2L)
+  penetration <- data.frame(
+    target = targets, target_intersection_streamlines = c(4, 4),
+    one_voxel_touch_percent_of_target_intersections = c(25, 0),
+    two_voxel_only_percent_of_target_intersections = c(0, 25),
+    three_to_four_voxels_percent_of_target_intersections = c(25, 0),
+    five_to_nine_voxels_percent_of_target_intersections = c(0, 25),
+    ten_or_more_voxels_percent_of_target_intersections = c(50, 50)
+  )
+  original_summary <- summary
+  original_penetration <- penetration
+  paths <- vapply(seq_len(3L), function(i) tempfile(fileext = ".png"), character(1L))
+  on.exit(unlink(paths), add = TRUE)
+  expect_silent(ftq_plot_endpoint_classification(summary, paths[[1L]]))
+  expect_silent(ftq_plot_endpoint_comparison(summary, paths[[2L]]))
+  expect_silent(ftq_plot_endpoint_penetration(penetration, paths[[3L]]))
+  expect_true(length(captured$target_labels) >= 4L)
+  for (labels in captured$target_labels) {
+    expect_identical(unname(gsub("\n", "", labels, fixed = TRUE)), targets)
+    expect_true(all(grepl("\n", labels, fixed = TRUE)))
+  }
+  expect_true(all(captured$target_angles == 1L))
+  expect_identical(summary, original_summary)
+  expect_identical(penetration, original_penetration)
+})
+
+test_that("an unbroken long target name cannot exceed the endpoint figure margins", {
+  captured <- ftq_public_endpoint_plot_capture()
+  source <- ftq_public_endpoint_plot_summary()
+  targets <- c(paste0("positive", strrep("W", 192L)),
+               paste0("negative", strrep("M", 192L)))
+  source$target <- rep(targets, 2L)
+  original <- source
+  path <- tempfile("endpoint-long-token-", fileext = ".png")
+  on.exit(unlink(path), add = TRUE)
+  expect_silent(ftq_plot_endpoint_comparison(source, path))
+  expect_true(file.exists(path) && file.info(path)$size > 0)
+  for (labels in captured$target_labels) {
+    expect_identical(unname(gsub("\n", "", labels, fixed = TRUE)), targets)
+    expect_true(all(nchar(unlist(strsplit(labels, "\n", fixed = TRUE))) <= 16L))
+  }
   expect_identical(source, original)
 })
