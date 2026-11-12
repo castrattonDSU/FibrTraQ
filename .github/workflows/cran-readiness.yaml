@@ -92,8 +92,19 @@ jobs:
           # Use TeX Live's sequential downloader; Windows aria2c prefetch can stall.
           TEXLIVE_DOWNLOADER: curl
           TEXLIVE_PREFETCH: '0'
+          TEXLIVE_PREFER_OWN: '1'
         shell: Rscript {0}
         run: |
+          cat("Archive tools before manual setup PATH isolation:\n")
+          print(Sys.which(c("tar", "xz")))
+          if (.Platform$OS.type == "windows") {
+            # Match TinyTeX's workaround for slow Rtools decompressors (issue #512).
+            paths <- strsplit(Sys.getenv("PATH"), .Platform$path.sep, fixed = TRUE)[[1L]]
+            paths <- paths[!grepl("(^|[\\\\/])rtools[0-9]*([\\\\/]|$)", paths, ignore.case = TRUE)]
+            Sys.setenv(PATH = paste(paths, collapse = .Platform$path.sep))
+          }
+          cat("Archive tools after manual setup PATH isolation:\n")
+          print(Sys.which(c("tar", "xz")))
           pdflatex <- unname(Sys.which("pdflatex"))
           kpsewhich <- unname(Sys.which("kpsewhich"))
           if (!nzchar(pdflatex) || !nzchar(kpsewhich)) stop("TinyTeX PDF tools were not found")
