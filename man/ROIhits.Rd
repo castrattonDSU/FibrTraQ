@@ -20,7 +20,7 @@ also accepted.}
 \value{
 A data.frame with one row per focal voxel and columns:
 \itemize{
-\item \strong{\if{html}{\out{<target labels>}}}: 1 if any streamline associated with the
+\item \strong{Target-label columns}: 1 if any streamline associated with the
 voxel intersects that target, else 0.
 \item \strong{"Voxel Coords"}: character key "x_y_z" for the focal voxel.
 \item \strong{"Local"}: 1 if all track points for that voxel fall within

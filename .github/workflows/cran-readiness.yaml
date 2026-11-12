@@ -43,8 +43,8 @@ jobs:
           archive <- paste0(package[1L, "Package"], "_", package[1L, "Version"], ".tar.gz")
           stopifnot(file.exists(archive))
           metadata <- c(
-            Package = package[1L, "Package"],
-            Version = package[1L, "Version"],
+            Package = unname(package[1L, "Package"]),
+            Version = unname(package[1L, "Version"]),
             Archive = archive,
             SHA256 = digest::digest(archive, algo = "sha256", file = TRUE),
             SourceCommit = Sys.getenv("GITHUB_SHA"),
@@ -87,10 +87,17 @@ jobs:
           needs: check
       - uses: r-lib/actions/setup-tinytex@v2
       - name: Install the reference manual fonts
-        shell: bash
+        shell: Rscript {0}
         run: |
-          tlmgr update --self
-          tlmgr install collection-fontsrecommended inconsolata
+          launcher <- if (.Platform$OS.type == "windows") "tlmgr.bat" else "tlmgr"
+          tlmgr <- unname(Sys.which(launcher))
+          if (!nzchar(tlmgr)) stop("TinyTeX launcher was not found: ", launcher)
+          for (args in list(c("update", "--self"),
+                            c("install", "collection-fontsrecommended", "inconsolata"),
+                            "--version")) {
+            status <- system2(tlmgr, args)
+            if (!identical(status, 0L)) stop("TinyTeX command failed: ", paste(args, collapse = " "))
+          }
       - uses: actions/download-artifact@v7
         with:
           name: cran-source-${{ github.sha }}
