@@ -87,17 +87,20 @@ jobs:
           needs: check
       - uses: r-lib/actions/setup-pandoc@v2
       - uses: r-lib/actions/setup-tinytex@v2
-      - name: Install the reference manual fonts
+      - name: Verify the bundled reference manual tools
         shell: Rscript {0}
         run: |
-          launcher <- if (.Platform$OS.type == "windows") "tlmgr.bat" else "tlmgr"
-          tlmgr <- unname(Sys.which(launcher))
-          if (!nzchar(tlmgr)) stop("TinyTeX launcher was not found: ", launcher)
-          for (args in list(c("update", "--self"),
-                            c("install", "collection-fontsrecommended", "inconsolata"),
-                            "--version")) {
-            status <- system2(tlmgr, args)
-            if (!identical(status, 0L)) stop("TinyTeX command failed: ", paste(args, collapse = " "))
+          pdflatex <- unname(Sys.which("pdflatex"))
+          kpsewhich <- unname(Sys.which("kpsewhich"))
+          if (!nzchar(pdflatex) || !nzchar(kpsewhich)) stop("TinyTeX PDF tools were not found")
+          stopifnot(identical(system2(pdflatex, "--version"), 0L))
+          for (font in c("inconsolata.sty", "times.sty")) {
+            path <- system2(kpsewhich, font, stdout = TRUE)
+            status <- attr(path, "status")
+            if ((!is.null(status) && status != 0L) || !length(path) || !any(nzchar(path))) {
+              stop("Required reference manual font was not found: ", font)
+            }
+            cat(font, ": ", path, "\n", sep = "")
           }
       - name: Build the pinned HTML manual validator
         shell: Rscript {0}
