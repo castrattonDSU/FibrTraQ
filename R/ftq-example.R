@@ -357,7 +357,7 @@ ftq_example_data <- function(verify = TRUE) {
 #' example$report_index
 #' }
 ftq_run_example <- function(
-    output_dir = tempfile("fibrtraq-known-answer-"),
+    output_dir = tempfile("ftq-"),
     backend = c("auto", "cpp", "r"),
     overwrite = FALSE,
     verbose = TRUE,

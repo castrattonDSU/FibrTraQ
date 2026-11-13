@@ -6,7 +6,7 @@ FibrTraQ is an analysis package that **assesses and quantifies the connectivity 
 
 To run the package, you need a TrackVis `.trk` or MRtrix `.tck` tractogram and binary NIfTI masks (`.nii` or `.nii.gz`) for the fNode and each cNode. A same-subject, aligned reference image (such as b0, T1, T2 or FA) is optional for execution and strongly recommended for spatial review.
 
-**Research preview:** FibrTraQ's tests establish the documented counting behavior and computational reproducibility. Each dataset still requires independent spatial verification before its results are interpreted. Follow the [spatial-verification guide](docs/spatial-verification.md) when bringing new inputs into the package.
+**Research preview:** FibrTraQ's tests establish the documented counting behavior and computational reproducibility. Each dataset still requires independent spatial verification before its results are interpreted. Follow the [spatial-verification guide](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/spatial-verification.md) when bringing new inputs into the package.
 
 **Start here:** [Install and try the example](#install-and-try-the-rudimentary-example) ·
 [Single-subject analysis](#run-fibrtraq-on-a-single-subject) · [Read the results](#read-the-main-results) ·
@@ -30,9 +30,10 @@ remotes::install_github(
 )
 ```
 
-CRAN submission is being prepared. FibrTraQ is not yet available through
-`install.packages("FibrTraQ")`; use the GitHub installation above until a
-CRAN release is announced.
+Version 0.3.4 is being prepared for CRAN resubmission after the 0.3.3
+incoming checks identified Windows report-path and documentation-link issues.
+FibrTraQ is not yet available through `install.packages("FibrTraQ")`; use the
+GitHub installation above until a CRAN release is announced.
 
 <a id="2-verify-the-installation"></a>
 
@@ -43,7 +44,7 @@ To run this, first **Restart R**, then run the rudimentary example. No external 
 library(FibrTraQ)
 
 demo <- ftq_run_example(
-  output_dir = file.path(tempdir(), "fibrtraq-known-answer"),
+  output_dir = file.path(tempdir(), "ftq-example"),
   overwrite = TRUE
 )
 
@@ -64,7 +65,7 @@ initial anatomical view and zoom; the compass follows the rotation.
 
 The compiled backend is built during installation. If R requests a compiler, use Apple Command Line Tools on macOS, Rtools matching your R version on Windows, or an R-compatible C++ toolchain on Linux.
 
-`main` changes over time. For a study, install a reviewed release tag or full commit SHA and use that same revision across workstations. See [fixed-version installation and verification](docs/advanced-workflows.md#install-a-fixed-version).
+`main` changes over time. For a study, install a reviewed release tag or full commit SHA and use that same revision across workstations. See [fixed-version installation and verification](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/advanced-workflows.md#install-a-fixed-version).
 
 </details>
 
@@ -112,11 +113,15 @@ TCK points are read as RAS+ world coordinates in millimeters and mapped through
 the NIfTI affine; leave `track_space = "auto"` or use `"world"`, with no extra
 axis flips. The NIfTI reference (or focal mask when no reference is supplied)
 must have valid, consistent spatial geometry and declared units. See the
-[TCK input requirements](docs/advanced-workflows.md#mrtrix-tck-inputs) for details.
+[TCK input requirements](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/advanced-workflows.md#mrtrix-tck-inputs) for details.
+
+On Windows, choose a short output directory such as `C:/FibrTraQ/run01` and
+keep subject and region labels concise. The report hierarchy adds folders and
+filenames to this root; see [Windows output paths](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/advanced-workflows.md#windows-output-paths).
 
 The reports use the same structure as the bundled example, with results calculated from your inputs. Files will also be generated in your output directory: reports, connection density NIfTI files, figures, and tabular-formatted data. Note, this analysis assigns targets from the full streamline path and uses the fNode mask itself as a destination for `local` connection assignment. `local` and `local_search` mean different things. `local` records whether the entire streamline stays inside the fNode; `local_search` assigns a target from the two endpoints and a physical search radius. Changing that radius does not change the local-region mask.
 
-Inspect the spatial previews and 3-D QC before interpreting results. FibrTraQ rejects incompatible image grids rather than silently resampling them. For `.trk`, when `axis_flip` is omitted, automatic mapping also stops if the best candidate flips any axis: sampled ROI overlap cannot establish anatomical alignment. For `.tck`, the mapping follows the format's world-coordinate convention without an orientation search. Every dataset still needs independent review. Follow the [spatial-verification steps](docs/spatial-verification.md) to check the source geometry, pin the mapping and locate its metadata. Without `reference_image`, the grayscale background is tractogram-derived density, not independent anatomical evidence.
+Inspect the spatial previews and 3-D QC before interpreting results. FibrTraQ rejects incompatible image grids rather than silently resampling them. For `.trk`, when `axis_flip` is omitted, automatic mapping also stops if the best candidate flips any axis: sampled ROI overlap cannot establish anatomical alignment. For `.tck`, the mapping follows the format's world-coordinate convention without an orientation search. Every dataset still needs independent review. Follow the [spatial-verification steps](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/spatial-verification.md) to check the source geometry, pin the mapping and locate its metadata. Without `reference_image`, the grayscale background is tractogram-derived density, not independent anatomical evidence.
 
 This analysis can be repeated for entire cohorts for subject-wise data.
 
@@ -134,7 +139,7 @@ Add these arguments to `ftq_run_files()` when they apply:
 | `track_space = "voxelmm", axis_flip = c(FALSE, FALSE, FALSE)` | Pin a verified `.trk` mapping; this example requires confirmed voxel-millimeter coordinates with no axis flips. Native `.tck` uses `"world"` |
 | `report_slices = c(20L, 30L, 40L)` | Select existing one-based axial slices for density heatmap previews; automatic selection is the default |
 
-The [interpretation guide](docs/interpretation.md#target-assignment-modes)
+The [interpretation guide](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/interpretation.md#target-assignment-modes)
 defines the assignment rules and their limits. `overwrite = FALSE` protects
 existing outputs by default; choose a new output directory for another run.
 
@@ -199,13 +204,13 @@ exists only when the workflow needs to save a derived image or mask.
 
 The standard workflow omits the extra exploratory CSVs and NIfTI maps.
 Their calculations and explicit research exports remain available through
-`ftq_exploratory_summary()`; see the [output inventory](docs/advanced-workflows.md#what-fibrtraq-writes).
+`ftq_exploratory_summary()`; see the [output inventory](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/advanced-workflows.md#what-fibrtraq-writes).
 
 Computational validation, anatomical QC and report-generation status are
 separate. A computational pass is not proof of biological validity. The 3-D
 viewer shows a quota-limited subset for inspection; use full-run tables and
-maps for quantitative claims. See [the full interpretation guide](docs/interpretation.md)
-and [output inventory](docs/advanced-workflows.md#what-fibrtraq-writes).
+maps for quantitative claims. See [the full interpretation guide](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/interpretation.md)
+and [output inventory](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/advanced-workflows.md#what-fibrtraq-writes).
 
 ## Run a regional study
 
@@ -214,7 +219,7 @@ of regions. Each requested region becomes focal in turn and the remaining
 regions become targets. A two-subject, four-region study therefore creates
 eight runs but still represents two biological subjects.
 
-The [complete regional-study example](docs/advanced-workflows.md#complete-regional-study-example)
+The [complete regional-study example](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/advanced-workflows.md#complete-regional-study-example)
 shows the named input lists and the exact function call. Its default
 `local_masks = "union"` defines local using the union of the supplied regions;
 this differs from the one-analysis template's focal-mask default.
@@ -224,9 +229,9 @@ this differs from the one-analysis template's focal-mask default.
 
 For other workflows:
 
-- [Manifest workflow](docs/advanced-workflows.md#manifest-workflow): save a YAML/JSON configuration that can be shared and rerun.
-- [Core in-memory function](docs/advanced-workflows.md#core-counting-function): work directly with arrays and tractography objects.
-- [S1c mouse-study recipe](docs/mouse-study-workflow.md): use the verified filenames and audited settings for that dataset.
+- [Manifest workflow](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/advanced-workflows.md#manifest-workflow): save a YAML/JSON configuration that can be shared and rerun.
+- [Core in-memory function](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/advanced-workflows.md#core-counting-function): work directly with arrays and tractography objects.
+- [S1c mouse-study recipe](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/mouse-study-workflow.md): use the verified filenames and audited settings for that dataset.
 
 <a id="sharing-and-opening-reports"></a>
 
@@ -241,20 +246,21 @@ sharing a bundle publicly.
 The report's output guide explains every table family and map. Older or
 customized guides are retained when a newer package creates a current guide.
 For historical Windows summaries containing `%5C` in broken links, use the
-[summary-repair instructions](docs/advanced-workflows.md#sharing-and-opening-reports).
+[summary-repair instructions](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/advanced-workflows.md#sharing-and-opening-reports).
 
 ## Common problems
 
 | Problem | What to check |
 |---|---|
 | GitHub installation returns HTTP 404 | Confirm repository access and an authorized GitHub credential |
-| Functions or arguments are missing after installation | Restart R; check the [loaded package revision](docs/advanced-workflows.md#verify-an-installed-version) and reinstall the intended version |
+| Functions or arguments are missing after installation | Restart R; check the [loaded package revision](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/advanced-workflows.md#verify-an-installed-version) and reinstall the intended version |
 | No focal hits | Review the tractogram coordinate convention, focal mask and selected mapping |
 | Automatic `.trk` mapping stops because its best candidate flips an axis | Verify the tractogram-to-mask alignment independently, then explicitly set `track_space` and `axis_flip`; a higher ROI-overlap score does not prove the orientation is correct |
-| A `.tck` run rejects geometry or coordinate settings | Use `track_space = "auto"` or `"world"` without extra flips, and resolve missing units or invalid/conflicting NIfTI transforms at their source; see [TCK requirements](docs/advanced-workflows.md#mrtrix-tck-inputs) |
+| A `.tck` run rejects geometry or coordinate settings | Use `track_space = "auto"` or `"world"` without extra flips, and resolve missing units or invalid/conflicting NIfTI transforms at their source; see [TCK requirements](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/advanced-workflows.md#mrtrix-tck-inputs) |
 | Images have the same dimensions but are rejected | Check their NIfTI affines with `ftq_mask_grid_report()` |
 | A 4-D image is rejected | Supply a b-value for every image volume |
 | Existing-output error | Choose a new directory or deliberately set `overwrite = TRUE` |
+| A Windows run stops because an output path is too long | Choose a shorter output directory and concise subject/region labels. The preflight error identifies the path that exceeds the supported length; see [Windows output paths](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/advanced-workflows.md#windows-output-paths) |
 | A Windows report opens but a figure or download does not | Move the complete output folder to a short location such as `C:/FibrTraQ/`. Some Windows applications retain a [260-character full-path limit](https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation), even when R created the file successfully. Keep the report folder and its contents together |
 | A report or viewer fails after the analysis completes | Open the saved run index: completed scientific files remain available and the failed stage is recorded |
 | Anatomical QC is unavailable | Supply a trusted same-grid endpoint context mask; image-bound coverage alone is not anatomical evidence |
@@ -270,14 +276,14 @@ The bundled fixture verifies reproducible software behavior. Unit and
 integration tests cover counting semantics, coordinate mapping, streamed
 readers, endpoint classes and R/C++ parity. GitHub Actions runs package checks
 on Windows, macOS and Linux. Completed evidence and remaining acceptance gates
-are recorded in [VALIDATION.md](VALIDATION.md); larger studies are distinct from
+are recorded in [VALIDATION.md](https://github.com/castrattonDSU/FibrTraQ/blob/main/VALIDATION.md); larger studies are distinct from
 the bundled synthetic example.
 
-Use `citation("FibrTraQ")` or [CITATION.cff](CITATION.cff) for citation metadata.
+Use `citation("FibrTraQ")` or [CITATION.cff](https://github.com/castrattonDSU/FibrTraQ/blob/main/CITATION.cff) for citation metadata.
 The associated manuscript is in preparation. FibrTraQ and its package-authored
 synthetic fixture are licensed under the
-[GNU General Public License, version 2 or later](LICENSE.md).
+[GNU General Public License, version 2 or later](https://github.com/castrattonDSU/FibrTraQ/blob/main/LICENSE.md).
 Third-party dependencies retain their own licenses. Earlier copies distributed
 under MIT, including release candidate `v0.3.0-rc2`, retain those terms.
-See [CONTRIBUTING.md](CONTRIBUTING.md) and [SUPPORT.md](SUPPORT.md) for
+See [CONTRIBUTING.md](https://github.com/castrattonDSU/FibrTraQ/blob/main/CONTRIBUTING.md) and [SUPPORT.md](https://github.com/castrattonDSU/FibrTraQ/blob/main/SUPPORT.md) for
 contributor and support guidance.

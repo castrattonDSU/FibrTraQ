@@ -1,9 +1,10 @@
 #!/usr/bin/env Rscript
 # Use an installed candidate and only the package-owned synthetic fixture.
-# Usage: Rscript generate-fixture.R <new-output-directory> [trk|tck]
+# Usage: Rscript generate-fixture.R <new-output-directory> [trk|tck] [normal|near-limit]
 args <- commandArgs(trailingOnly = TRUE)
-stopifnot(length(args) %in% c(1L, 2L))
-format <- if (length(args) == 2L) match.arg(args[[2L]], c("trk", "tck")) else "trk"
+stopifnot(length(args) %in% 1:3)
+format <- if (length(args) >= 2L) match.arg(args[[2L]], c("trk", "tck")) else "trk"
+path_mode <- if (length(args) == 3L) match.arg(args[[3L]], c("normal", "near-limit")) else "normal"
 root <- normalizePath(args[[1L]], winslash = "/", mustWork = FALSE)
 if (dir.exists(root)) stop("Choose a new browser acceptance output directory.")
 dir.create(root, recursive = TRUE)
@@ -12,12 +13,12 @@ original <- file.path(root, "original report # %20 caf\u00e9")
 relocated <- file.path(root, "relocated report # %20 caf\u00e9")
 
 library(FibrTraQ)
-run_tck_example <- function() {
+run_tck_example <- function(original, input_tag) {
   data <- ftq_example_data(verify = TRUE)
   params <- data$parameters
   stopifnot(identical(params$track_space, "voxel"),
             identical(as.logical(params$axis_flip), rep(FALSE, 3L)))
-  input_dir <- file.path(root, "native-tck-inputs")
+  input_dir <- file.path(root, paste0("native-tck-inputs-", input_tag))
   dir.create(input_dir)
 
   # This package-owned fixture declares one-based voxel coordinates. Give its
@@ -135,21 +136,112 @@ run_tck_example <- function() {
   c(list(analysis = analysis, validation = validation), as.list(report_paths))
 }
 
-example <- if (format == "trk") {
-  ftq_run_example(output_dir = original, backend = "cpp", verbose = FALSE)
-} else {
-  run_tck_example()
+run_example <- function(output_dir, input_tag) {
+  if (format == "trk") {
+    ftq_run_example(output_dir = output_dir, backend = "cpp", verbose = FALSE)
+  } else {
+    run_tck_example(output_dir, input_tag)
+  }
 }
-stopifnot(isTRUE(example$validation$passed),
+check_example <- function(example) {
+  stopifnot(isTRUE(example$validation$passed),
           nrow(example$validation$tables) == 7L,
           all(example$validation$tables$passed),
           nrow(example$validation$claims) == 18L,
           all(example$validation$claims$passed),
           all(example$validation$reports$passed))
+}
+report_files <- function(directory) {
+  files <- list.files(directory, recursive = TRUE, all.files = TRUE,
+                      no.. = TRUE, full.names = FALSE)
+  files[!dir.exists(file.path(directory, files))]
+}
+utf16_length <- function(paths) {
+  vapply(iconv(enc2utf8(paths), from = "UTF-8", to = "UTF-16LE", toRaw = TRUE),
+         function(value) {
+           if (is.null(value)) stop("Could not measure a fixture path in UTF-16.")
+           length(value) / 2
+         }, numeric(1L), USE.NAMES = FALSE)
+}
+planned_paths <- function(output_dir) {
+  data <- ftq_example_data(verify = TRUE)
+  params <- data$parameters
+  getFromNamespace("ftq_regional_study_output_paths", "FibrTraQ")(
+    output_dir, subjects = params$subject,
+    region_labels = c(params$focal_label, names(data$target_masks)),
+    focal_regions = params$focal_label, description = params$description,
+    write_endpoint = identical(params$endpoint_analysis, "exact_and_dilated1"),
+    write_local_search = identical(params$target_intersection_mode, "local_search")
+  )
+}
+example <- run_example(original, "baseline")
+check_example(example)
 original <- normalizePath(original, winslash = "/", mustWork = TRUE)
-files <- list.files(original, recursive = TRUE, all.files = TRUE,
-                    no.. = TRUE, full.names = FALSE)
-files <- files[!dir.exists(file.path(original, files))]
+files <- report_files(original)
+path_boundary <- NULL
+if (path_mode == "near-limit") {
+  stopifnot(.Platform$OS.type == "windows")
+  baseline_root <- original
+  baseline_files <- files
+  baseline_checksums <- unname(tools::md5sum(file.path(original, files)))
+  longest_relative <- max(utf16_length(files))
+  sized_root <- function(prefix, maximum_file_length) {
+    desired_root_length <- maximum_file_length - longest_relative - 1L
+    padding <- desired_root_length - utf16_length(prefix)
+    if (padding < 1L) stop("Choose a shorter browser acceptance root for near-limit checks.")
+    paste0(prefix, strrep("p", padding))
+  }
+  # Run the writers again at the measured boundary; a relocated short-root run
+  # alone cannot demonstrate that R creates report images and tables here.
+  original <- sized_root(file.path(root, "cran-temp", "generated # %20 caf\u00e9 "), 255L)
+  relocated <- sized_root(file.path(root, "relocated # %20 caf\u00e9 "), 259L)
+  original_planned <- planned_paths(original)
+  example <- run_example(original, "near-limit")
+  check_example(example)
+  original <- normalizePath(original, winslash = "/", mustWork = TRUE)
+  files <- report_files(original)
+  stopifnot(identical(files, baseline_files),
+            max(utf16_length(file.path(original, files))) == 255L,
+            identical(unname(tools::md5sum(file.path(baseline_root, baseline_files))),
+                      baseline_checksums))
+
+  rejected_root <- sized_root(file.path(root, "cran-temp", "rejected "), 300L)
+  rejected_planned <- planned_paths(rejected_root)
+  sentinel <- file.path(root, "existing-output-sentinel.txt")
+  writeLines("Existing output must remain intact after a rejected request.", sentinel)
+  sentinel_checksum <- unname(tools::md5sum(sentinel))
+  rejection <- tryCatch({ run_example(rejected_root, "over-limit"); NULL }, error = identity)
+  # Write the observed outcome before assertions so a broken guard still leaves
+  # enough evidence to distinguish a rejection from a partial-output failure.
+  rejected_evidence <- list(
+    output_root = rejected_root,
+    planned_maximum_utf16_units = max(utf16_length(rejected_planned)),
+    message = if (inherits(rejection, "error")) conditionMessage(rejection) else NULL,
+    output_root_absent = !file.exists(rejected_root),
+    existing_output_sentinel = sentinel,
+    existing_output_sentinel_md5 = sentinel_checksum,
+    existing_output_sentinel_preserved = identical(unname(tools::md5sum(sentinel)), sentinel_checksum),
+    baseline_outputs_preserved = identical(
+      unname(tools::md5sum(file.path(baseline_root, baseline_files))), baseline_checksums)
+  )
+  jsonlite::write_json(rejected_evidence, file.path(root, "over-limit-evidence.json"),
+                       auto_unbox = TRUE, pretty = TRUE)
+  stopifnot(inherits(rejection, "error"),
+            startsWith(conditionMessage(rejection),
+              "Windows output path exceeds the supported limit of 259 UTF-16 code units"),
+            rejected_evidence$output_root_absent,
+            rejected_evidence$existing_output_sentinel_preserved,
+            rejected_evidence$baseline_outputs_preserved)
+  path_boundary <- list(
+    baseline_root = baseline_root,
+    generated_directly_at_boundary = TRUE,
+    original_expected_maximum_utf16_units = 255L,
+    original_planned_maximum_utf16_units = max(utf16_length(original_planned)),
+    relocated_expected_maximum_utf16_units = 259L,
+    relative_inventory_identical = TRUE,
+    rejected_request = rejected_evidence
+  )
+}
 dir.create(relocated)
 for (relative in files) {
   destination <- file.path(relocated, relative)
@@ -161,6 +253,9 @@ for (relative in files) {
 stopifnot(identical(unname(tools::md5sum(file.path(original, files))),
                     unname(tools::md5sum(file.path(relocated, files)))))
 relocated <- normalizePath(relocated, winslash = "/", mustWork = TRUE)
+if (path_mode == "near-limit") {
+  stopifnot(max(utf16_length(file.path(relocated, files))) == 259L)
+}
 relative_path <- function(path) {
   path <- normalizePath(path, winslash = "/", mustWork = TRUE)
   stopifnot(startsWith(path, paste0(original, "/")))
@@ -177,6 +272,8 @@ manifest <- list(
   fixture = paste0("package-owned synthetic known-answer example (", toupper(format),
                    "); not anatomical MRI"),
   tractogram_format = format,
+  path_mode = path_mode,
+  path_boundary = path_boundary,
   tck_coordinate_convention = if (format == "tck") "RAS+ world millimetres" else NULL,
   tck_image_geometry = if (format == "tck") "identity sform; millimetre units" else NULL,
   package_version = as.character(packageVersion("FibrTraQ")),

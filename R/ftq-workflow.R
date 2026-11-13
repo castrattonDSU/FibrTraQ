@@ -203,6 +203,7 @@ ftq_run <- function(manifest,
   if (!is.null(write_maps)) m$write_maps <- isTRUE(write_maps)
   if (!is.null(write_report)) m$write_report <- isTRUE(write_report)
 
+  ftq_check_windows_output_paths(ftq_manifest_output_paths(m), m$output_dir)
   preflight <- ftq_preflight(m, output_dir = m$output_dir, overwrite = m$overwrite)
   if (!isTRUE(preflight$passed)) {
     stop("FibrTraQ preflight failed:\n", paste(ftq_preflight_failures(preflight), collapse = "\n"))
@@ -1349,7 +1350,10 @@ ftq_report <- function(result_csv,
     report_slices <- ftq_report_slices(report_slices, dim(RNifti::readNifti(template_image))[3L])
   }
   manifest$report$slices <- report_slices
-  report_html <- file.path(output_dir, paste0(prefix, "_report.html"))
+  report_paths <- ftq_report_output_paths(
+    output_dir, prefix, write_endpoint = TRUE, write_local_search = TRUE
+  )
+  report_html <- report_paths$html
   if (!isTRUE(overwrite) && dir.exists(output_dir)) {
     ftq_check_overwrite(list.files(output_dir, recursive = TRUE, full.names = TRUE), FALSE)
   }
@@ -1378,14 +1382,8 @@ ftq_report <- function(result_csv,
     result, output_dir, prefix, template_image = template_image, overwrite = overwrite
   )
   top_tables <- c(top_tables, voxel_exports$tables)
-  top_tables$connection_summary <- file.path(
-    table_dir,
-    paste0(prefix, "_connection-summary.csv")
-  )
-  top_tables$fate_summary <- file.path(
-    table_dir,
-    paste0(prefix, "_report-fate-summary.csv")
-  )
+  top_tables$connection_summary <- report_paths$tables$connection_summary
+  top_tables$fate_summary <- report_paths$tables$fate_summary
   utils::write.csv(connection_summary, top_tables$connection_summary, row.names = FALSE)
   utils::write.csv(
     fate_summary,
@@ -1411,10 +1409,7 @@ ftq_report <- function(result_csv,
       endpoint_data$penetration,
       target_labels = unique(as.character(endpoint_data$summary$target))
     )
-    penetration_summary_path <- file.path(
-      table_dir,
-      paste0(prefix, "_endpoint-penetration-summary.csv")
-    )
+    penetration_summary_path <- report_paths$tables$endpoint_penetration_summary
     utils::write.csv(
       endpoint_data$penetration_summary,
       penetration_summary_path,
@@ -1438,14 +1433,8 @@ ftq_report <- function(result_csv,
     local_search_data$endpoint_status <- ftq_local_search_endpoint_status(
       local_search_data$assignments
     )
-    top_tables$local_search_summary <- file.path(
-      table_dir,
-      paste0(prefix, "_local-search-summary.csv")
-    )
-    top_tables$local_search_endpoint_status <- file.path(
-      table_dir,
-      paste0(prefix, "_local-search-endpoint-status.csv")
-    )
+    top_tables$local_search_summary <- report_paths$tables$local_search_summary
+    top_tables$local_search_endpoint_status <- report_paths$tables$local_search_endpoint_status
     utils::write.csv(
       local_search_data$summary,
       top_tables$local_search_summary,
@@ -1457,27 +1446,12 @@ ftq_report <- function(result_csv,
       row.names = FALSE
     )
   }
-  figs <- list(
-    fate = file.path(fig_dir, paste0(prefix, "_fig_fate-summary.png")),
-    rsc = file.path(fig_dir, paste0(prefix, "_fig_rsc-summary.png")),
-    tracks = file.path(fig_dir, paste0(prefix, "_fig_tracks-distribution.png")),
-    spatial_tracks = file.path(fig_dir, paste0(prefix, "_fig_spatial-tracks.png")),
-    spatial_targets = file.path(fig_dir, paste0(prefix, "_fig_spatial-targets.png")),
-    spatial_leave_no_target = file.path(fig_dir, paste0(prefix, "_fig_spatial-leave-no-target.png"))
-  )
+  figs <- report_paths$figures[c("fate", "rsc", "tracks", "spatial_tracks",
+                                "spatial_targets", "spatial_leave_no_target")]
   if (!is.null(endpoint_data) && !isTRUE(endpoint_data$missing)) {
-    figs$endpoint_classification <- file.path(
-      fig_dir,
-      paste0(prefix, "_fig_endpoint-classification.png")
-    )
-    figs$endpoint_comparison <- file.path(
-      fig_dir,
-      paste0(prefix, "_fig_endpoint-exact-vs-dilated1.png")
-    )
-    figs$endpoint_penetration <- file.path(
-      fig_dir,
-      paste0(prefix, "_fig_endpoint-penetration.png")
-    )
+    figs$endpoint_classification <- report_paths$figures$endpoint_classification
+    figs$endpoint_comparison <- report_paths$figures$endpoint_comparison
+    figs$endpoint_penetration <- report_paths$figures$endpoint_penetration
     ftq_plot_endpoint_classification(endpoint_data$summary, figs$endpoint_classification)
     ftq_plot_endpoint_comparison(endpoint_data$summary, figs$endpoint_comparison)
     ftq_plot_endpoint_penetration(
@@ -1486,10 +1460,7 @@ ftq_report <- function(result_csv,
     )
   }
   if (!is.null(local_search_data)) {
-    figs$local_search_distances <- file.path(
-      fig_dir,
-      paste0(prefix, "_fig_local-search-end-voxel-distances.png")
-    )
+    figs$local_search_distances <- report_paths$figures$local_search_distances
     ftq_plot_local_search_distances(
       local_search_data$assignments,
       figs$local_search_distances
@@ -1514,7 +1485,7 @@ ftq_report <- function(result_csv,
     report_slices = report_slices
   )
   if (length(voxel_exports$maps)) {
-    figs$local_fraction <- file.path(fig_dir, paste0(prefix, "_fig_local-fraction.png"))
+    figs$local_fraction <- report_paths$figures$local_fraction
     arr <- RNifti::readNifti(voxel_exports$maps$local_fraction)
     bg <- ftq_report_background(manifest$background_image, tractogram_context,
                                dim(arr)[1:3], ftq_value(manifest$context_source, "auto"))
@@ -2566,8 +2537,7 @@ ftq_write_top_tables <- function(result, table_dir, prefix, n = NULL) {
                  xyz[[coord_names[2L]]], xyz[[coord_names[3L]]])
     tab <- xyz[ord, unique(c(coord_names, "tracks", "local", "leave_no_target", derived_name, metric)), drop = FALSE]
     if (!is.null(n)) tab <- tab[seq_len(min(n, nrow(tab))), , drop = FALSE]
-    ranking <- if (is.null(n)) "ranked" else paste0("top", n)
-    path <- file.path(table_dir, paste0(prefix, "_", ranking, "_", ftq_sanitize_label(metric), "_voxels.csv"))
+    path <- ftq_ranked_table_path(table_dir, prefix, metric, n)
     utils::write.csv(tab, path, row.names = FALSE)
     out[[metric]] <- path
   }

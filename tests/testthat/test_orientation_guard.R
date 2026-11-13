@@ -134,7 +134,7 @@ for (orientation_backend in c("r", "cpp")) {
 test_that("file workflow blocks an unapproved reflection without scientific outputs", {
   skip_if_not_installed("RNifti")
   skip_if_not_installed("freesurferformats")
-  root <- tempfile("orientation-guard-")
+  root <- tempfile("ftq-")
   dir.create(root)
   on.exit(unlink(root, recursive = TRUE, force = TRUE), add = TRUE)
   fixture <- ftq_orientation_guard_fixture()
@@ -168,7 +168,7 @@ test_that("file workflow blocks an unapproved reflection without scientific outp
   expect_identical(failed_index$run_status, "failed")
   expect_match(failed_index$error, "Automatic mapping would reflect")
 
-  args$output_dir <- file.path(root, "verified-orientation")
+  args$output_dir <- file.path(root, "verified")
   args$track_space <- "voxelmm"
   args$axis_flip <- c(FALSE, FALSE, FALSE)
   result <- do.call(ftq_run_files, args)

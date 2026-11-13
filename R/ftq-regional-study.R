@@ -444,7 +444,13 @@ ftq_run_regional_study <- function(
          call. = FALSE)
   }
 
-  output_dir <- normalizePath(path.expand(output_dir), mustWork = FALSE)
+  output_dir <- ftq_absolute_output_path(output_dir)
+  ftq_check_windows_output_paths(ftq_regional_study_output_paths(
+    output_dir, subjects, region_labels, focal_regions, description,
+    write_maps, write_report, write_exploratory_report, write_qc_viewer,
+    write_endpoint = identical(endpoint_analysis, "exact_and_dilated1"),
+    write_local_search = identical(target_intersection_mode, "local_search")
+  ), output_dir)
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
   output_dir <- normalizePath(output_dir, mustWork = TRUE)
   index_csv <- file.path(output_dir, "fibrtraq-run-index.csv")

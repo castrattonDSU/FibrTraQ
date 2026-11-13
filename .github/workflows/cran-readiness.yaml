@@ -2,6 +2,11 @@ name: CRAN readiness
 
 "on":
   workflow_dispatch:
+    inputs:
+      reproduce_033:
+        description: Reproduce the archived 0.3.3 Windows report-writing failure
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -71,7 +76,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        include:
+          - {os: ubuntu-latest, temp-profile: normal}
+          - {os: windows-latest, temp-profile: normal}
+          - {os: windows-2022, temp-profile: long-temp}
     steps:
       - uses: actions/checkout@v6
       - uses: r-lib/actions/setup-r@v2
@@ -86,6 +94,22 @@ jobs:
           extra-packages: any::rcmdcheck
           needs: check
       - uses: r-lib/actions/setup-pandoc@v2
+      - name: Verify Linux incoming spelling dictionaries
+        if: runner.os == 'Linux'
+        timeout-minutes: 12
+        shell: Rscript {0}
+        run: |
+          source(".github/scripts/cran-readiness/preflight.R")
+          ftq_cran_setup_aspell(file.path(Sys.getenv("RUNNER_TEMP"), "ftq-cran-check"))
+      - name: Record Windows long-path configuration
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $evidence = Join-Path $env:RUNNER_TEMP "ftq-cran-check"
+          New-Item -ItemType Directory -Force -Path $evidence | Out-Null
+          Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name LongPathsEnabled |
+            Select-Object LongPathsEnabled |
+            ConvertTo-Json | Set-Content (Join-Path $evidence 'windows-long-paths.json')
       - uses: r-lib/actions/setup-tinytex@v2
       - name: Verify the reference manual tools and fonts
         env:
@@ -178,11 +202,14 @@ jobs:
           name: cran-source-${{ github.sha }}
           path: ${{ runner.temp }}/ftq-cran-source
       - name: Verify and check the release-built archive with R-devel
+        env:
+          FTQ_TEMP_PROFILE: ${{ matrix.temp-profile }}
         shell: Rscript {0}
         run: |
+          source(".github/scripts/cran-readiness/preflight.R")
           source <- file.path(Sys.getenv("RUNNER_TEMP"), "ftq-cran-source")
           evidence <- file.path(Sys.getenv("RUNNER_TEMP"), "ftq-cran-check")
-          dir.create(evidence, recursive = TRUE)
+          dir.create(evidence, recursive = TRUE, showWarnings = FALSE)
           metadata <- read.dcf(file.path(source, "source.dcf"))
           archive <- file.path(source, metadata[1L, "Archive"])
           stopifnot(identical(unname(metadata[1L, "SourceCommit"]), Sys.getenv("GITHUB_SHA")))
@@ -205,6 +232,12 @@ jobs:
           dir.create(manual_root, recursive = TRUE)
           utils::untar(archive, exdir = manual_root)
           manual_source <- file.path(manual_root, metadata[1L, "Package"])
+          ftq_cran_readme_links(manual_source, evidence)
+          spelling <- identical(Sys.info()[["sysname"]], "Linux")
+          if (spelling && Sys.getenv("FTQ_ASPELL_VERIFIED") != "true") {
+            stop("Linux incoming spelling checks require verified Aspell dictionaries")
+          }
+          check_env <- ftq_cran_environment(Sys.getenv("FTQ_TEMP_PROFILE"), evidence, spelling)
           manual_build <- file.path(evidence, "manual-preflight-build")
           manual_pdf <- file.path(evidence, "manual-preflight.pdf")
           manual_log <- file.path(evidence, "manual-preflight.log")
@@ -221,11 +254,7 @@ jobs:
           result <- rcmdcheck::rcmdcheck(
             archive, args = "--as-cran", check_dir = evidence,
             timeout = 1800, error_on = "never",
-            env = c(NOT_CRAN = "false", `_R_CHECK_FORCE_SUGGESTS_` = "true",
-                    `_R_CHECK_CRAN_INCOMING_` = "true",
-                    `_R_CHECK_CRAN_INCOMING_REMOTE_` = "true",
-                    `_R_CHECK_RD_VALIDATE_RD2HTML_` = "true",
-                    `_R_CHECK_SYSTEM_CLOCK_` = "true")
+            env = check_env
           )
           capture.output(print(result, test_output = TRUE),
                          file = file.path(evidence, "check-summary.txt"))
@@ -258,15 +287,67 @@ jobs:
                  paste(names(completed)[!completed], collapse = ", "),
                  ". Inspect the full check logs and process exit status.")
           }
-          # Keep every NOTE for maintainer review; fail the job on warnings or errors.
+          # Retain all diagnostics; allow only the reviewed first-submission content.
+          package <- read.dcf(file.path(manual_source, "DESCRIPTION"))
+          unexpected <- ftq_cran_unexpected_notes(result$notes, unname(package[1L, "Maintainer"]))
+          writeLines(as.character(unexpected), file.path(evidence, "unexpected-notes.txt"))
           if (length(result$errors) || length(result$warnings)) {
             stop("CRAN readiness check has errors or warnings; inspect the retained evidence.")
           }
+          if (length(unexpected)) stop("CRAN readiness check has unreviewed NOTE content; inspect unexpected-notes.txt.")
       - name: Retain all check logs and the generated reference manual
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: cran-check-${{ matrix.os }}-${{ github.sha }}
+          name: cran-check-${{ matrix.os }}-${{ matrix.temp-profile }}-${{ github.sha }}
           path: ${{ runner.temp }}/ftq-cran-check
+          retention-days: 30
+          if-no-files-found: warn
+
+  reproduce-033:
+    if: inputs.reproduce_033
+    runs-on: windows-2022
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: devel
+          use-public-rspm: true
+          Ncpus: 2
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        env:
+          GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          extra-packages: any::rcmdcheck
+          needs: check
+      - uses: actions/download-artifact@v7
+        with:
+          repository: castrattonDSU/FibrTraQ
+          run-id: '43288320993'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          name: cran-source-8ba13990bdb1cc55730171427be44b4fb1fce082
+          path: ${{ runner.temp }}/ftq-cran033-source
+      - name: Record the Windows baseline configuration without changing it
+        shell: pwsh
+        run: |
+          $evidence = Join-Path $env:RUNNER_TEMP "ftq-cran033-path-reproduction"
+          New-Item -ItemType Directory -Force -Path $evidence | Out-Null
+          Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name LongPathsEnabled |
+            Select-Object LongPathsEnabled |
+            ConvertTo-Json | Set-Content (Join-Path $evidence 'windows-long-paths.json')
+      - name: Reproduce the report-writing failure from the exact 0.3.3 archive
+        shell: Rscript {0}
+        run: |
+          source(".github/scripts/cran-readiness/reproduce-033.R")
+      - name: Retain the original failure and partial outputs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: cran-033-path-reproduction-${{ github.sha }}
+          path: ${{ runner.temp }}/ftq-cran033-path-reproduction
           retention-days: 30
           if-no-files-found: warn

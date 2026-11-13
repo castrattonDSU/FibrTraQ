@@ -57,17 +57,11 @@ ftq_report_local_fraction <- function(result) {
 ftq_report_write_voxel_exports <- function(result, output_dir, prefix,
                                            template_image = NULL, overwrite = FALSE) {
   table_dir <- file.path(output_dir, "tables")
-  tables <- list(
-    all_voxels = file.path(table_dir, paste0(prefix, "_all-voxels.csv")),
-    all_voxel_columns = file.path(table_dir, paste0(prefix, "_all-voxels-columns.csv")),
-    local_fraction = file.path(table_dir, paste0(prefix, "_local-fraction.csv"))
-  )
+  report_paths <- ftq_report_output_paths(output_dir, prefix)
+  tables <- report_paths$tables[c("all_voxels", "all_voxel_columns", "local_fraction")]
   maps <- list()
   if (!is.null(template_image) && file.exists(template_image)) {
-    maps <- list(
-      local_fraction = file.path(output_dir, "maps", paste0(prefix, "_local-fraction.nii.gz")),
-      local_fraction_valid = file.path(output_dir, "maps", paste0(prefix, "_local-fraction-valid.nii.gz"))
-    )
+    maps <- report_paths$maps
   }
   ftq_check_overwrite(c(unlist(tables), unlist(maps)), overwrite)
   view <- ftq_report_voxel_export(result)

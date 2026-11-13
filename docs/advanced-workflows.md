@@ -662,6 +662,25 @@ labels, the normalized target-assignment mode, and the local-search radius for
 reproducibility. Review these fields and use de-identified subject labels
 before sharing an output bundle publicly.
 
+## Windows output paths
+
+Use a short writable output root, for example `C:/FibrTraQ/run01`, and concise
+subject, description, focal-region and target labels. Generated reports repeat
+the run identifier in folders and filenames, so the complete file paths are
+longer than the output root alone.
+
+Before regional analysis, FibrTraQ checks planned Windows output paths. If a
+path exceeds the supported length, the run stops with that path and guidance
+to choose a shorter destination. Resolve the error before rerunning; existing
+output folders are not renamed or deleted. The same analysis settings and
+input masks can be reused with a new output directory.
+
+This protects the portable report workflow; it does not establish support for
+arbitrarily long paths. Some Windows file operations and browser tools retain
+a 260-character full-path limit even when other applications can create the
+file. Keep complete results folders together and use a short location when
+moving reports between workstations.
+
 ## Sharing and opening reports
 
 Copy or ZIP the **whole results folder**, keeping its subfolders together.

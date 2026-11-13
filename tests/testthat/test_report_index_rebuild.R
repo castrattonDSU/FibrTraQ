@@ -1,5 +1,5 @@
 test_that("complete report links and figures survive reserved output-folder names", {
-  root <- tempfile("reports # 100%20 caf\u00e9 ")
+  root <- tempfile(" #%20\u00e9")
   on.exit(unlink(root, recursive = TRUE), add = TRUE)
   example <- ftq_run_example(output_dir = root)
   expect_true(example$validation$passed)

@@ -23,7 +23,7 @@ test_that("native TCK creates every report and matches equivalent TrackVis outpu
   affine <- diag(c(-1.25, 2, 0.75, 1))
   affine[1:3, 4] <- c(15, -8, 2)
   fixture <- tck_fixture_case(affine)
-  root <- tempfile("tck-report-parity-")
+  root <- tempfile("ftq-")
   paths <- tck_fixture_files(file.path(root, "inputs"), fixture)
   variants <- list(tck_stream = c("tck", "stream"),
                    tck_memory = c("tck", "memory"),

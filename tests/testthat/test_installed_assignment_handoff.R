@@ -47,7 +47,7 @@ test_that("installed file workflow records endpoint and local assignment modes",
   for (i in seq_len(nrow(modes))) {
     mode <- modes$mode[[i]]
     radius_mm <- modes$radius_mm[[i]]
-    output_dir <- tempfile(paste0("fibrtraq-handoff-", mode, "-"))
+    output_dir <- tempfile("ftq-")
     on.exit(unlink(output_dir, recursive = TRUE, force = TRUE), add = TRUE)
 
     if (identical(mode, "local_search")) {

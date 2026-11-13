@@ -22,6 +22,7 @@ const result = {
   package_version: manifest.package_version,
   source_commit: manifest.source_commit,
   fixture: manifest.fixture,
+  path_mode: manifest.path_mode,
   checks: [], pages: [], downloads: [], screenshots: [], page_errors: [], image_loading: [],
   scope: "Synthetic reports in native Windows Chromium; manual and real-brain review remain separate."
 };
@@ -189,11 +190,56 @@ function bundleFilePaths(directory) {
       "Installed-package fixture passed all scientific known answers");
     const bundlePaths = bundleFilePaths(root);
     const longestPath = bundlePaths.reduce((a, b) => a.length >= b.length ? a : b, "");
+    const originalRoot = fs.realpathSync(manifest.original_root);
+    const originalPaths = bundleFilePaths(originalRoot);
+    const longestOriginalPath = originalPaths.reduce((a, b) => a.length >= b.length ? a : b, "");
+    const pathDetails = (directory, longest) => ({
+      absolute_root: directory, root_utf16_units: directory.length,
+      directory_components: directory.split(path.sep).filter(Boolean).length,
+      maximum_utf16_units: longest.length,
+      longest_relative_path: path.relative(directory, longest)
+    });
     result.path_lengths = {maximum_characters: longestPath.length,
-      longest_relative_path: path.relative(root, longestPath)};
+      longest_relative_path: path.relative(root, longestPath),
+      original: pathDetails(originalRoot, longestOriginalPath),
+      relocated: pathDetails(root, longestPath)};
     check(longestPath.length < 260,
       "Windows browser fixture uses file paths below the 260-character compatibility limit; choose a shorter output root if needed",
       result.path_lengths);
+    if (manifest.path_mode === "near-limit") {
+      const boundary = manifest.path_boundary;
+      result.path_boundary = boundary;
+      check(boundary.generated_directly_at_boundary,
+        "Near-limit reports were generated at their deep original root");
+      check(longestOriginalPath.length === 255 && boundary.original_expected_maximum_utf16_units === 255,
+        "Longest directly generated file path is 255 UTF-16 code units", result.path_lengths.original);
+      check(longestPath.length === 259 && boundary.relocated_expected_maximum_utf16_units === 259,
+        "Longest relocated file path is 259 UTF-16 code units", result.path_lengths.relocated);
+      check(boundary.original_planned_maximum_utf16_units <= 259,
+        "Successful generation also satisfies the package's planned-path preflight",
+        {planned_maximum_utf16_units: boundary.original_planned_maximum_utf16_units});
+      // CRAN's failed check used a 44-character temporary prefix. This records
+      // comparable absolute-root depth without claiming every CRAN root fits.
+      check(originalRoot.length >= 44,
+        "Direct generation uses an absolute root at least as long as the observed CRAN temporary prefix");
+      const inventory = (directory, paths) => paths.map(filename => path.relative(directory, filename)).sort();
+      const baselineRoot = fs.realpathSync(boundary.baseline_root);
+      check(boundary.relative_inventory_identical &&
+        JSON.stringify(inventory(originalRoot, originalPaths)) ===
+          JSON.stringify(inventory(baselineRoot, bundleFilePaths(baselineRoot))),
+      "Deep generation preserves the short-root file inventory");
+      const rejected = boundary.rejected_request;
+      check(rejected.planned_maximum_utf16_units > 259 &&
+        rejected.message.startsWith("Windows output path exceeds the supported limit of 259 UTF-16 code units"),
+      "Over-limit public workflow rejects the planned path with the specific actionable error", rejected);
+      check(rejected.output_root_absent && !fs.existsSync(rejected.output_root),
+        "Rejected workflow leaves no partial output directory");
+      const sentinelMD5 = crypto.createHash("md5")
+        .update(fs.readFileSync(rejected.existing_output_sentinel)).digest("hex");
+      check(rejected.existing_output_sentinel_preserved &&
+        sentinelMD5 === rejected.existing_output_sentinel_md5 && rejected.baseline_outputs_preserved,
+      "Rejected workflow preserves pre-existing outputs and sentinel bytes");
+    }
     browser = await chromium.launch({headless: true});
     result.browser_version = browser.version();
     result.playwright_version = require("playwright/package.json").version;

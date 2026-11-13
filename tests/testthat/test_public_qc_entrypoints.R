@@ -11,7 +11,7 @@ ftq_public_scene <- function(path) {
 
 test_that("the public example distinguishes exact evidence from HTML presence", {
   example <- ftq_run_example(
-    output_dir = tempfile("public-example-"), backend = "r", verbose = FALSE
+    output_dir = tempfile("ftq-"), backend = "r", verbose = FALSE
   )
   expect_true(example$validation$passed)
   expect_identical(nrow(example$validation$tables), 7L)

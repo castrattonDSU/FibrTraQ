@@ -1,6 +1,19 @@
 # FibrTraQ changes
 
-## 0.3.3 (submission candidate; unreleased)
+## 0.3.4 (CRAN resubmission candidate; unreleased)
+
+- Check planned Windows output paths before regional analysis and explain how
+  to shorten an unsupported destination. Existing output names and scientific
+  calculations are preserved.
+- Shortened generated temporary output names in the bundled example and tests
+  to accommodate deeper temporary directories such as CRAN's Windows setup.
+- Replaced README links to files excluded from the source archive with public
+  repository URLs, preserving the linked sections.
+- Added release checks for deeper Windows temporary paths, README file links
+  and the additional incoming spelling diagnostics. Unexpected check notes
+  require review before submission.
+
+## 0.3.3 (first CRAN submission; not accepted)
 
 - Clarified supported tractogram formats, outputs and spatial-verification
   requirements in the package description for the first CRAN submission.

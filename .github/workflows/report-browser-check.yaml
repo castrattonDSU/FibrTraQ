@@ -18,12 +18,14 @@ jobs:
       fail-fast: false
       matrix:
         tractogram-format: [trk, tck]
+        path-mode: [normal, near-limit]
     steps:
       - uses: actions/checkout@v6
       - name: Set the report output directory on the runner
         shell: pwsh
         run: |
-          $reviewPath = Join-Path $env:RUNNER_TEMP "ftq-browser-${{ matrix.tractogram-format }}"
+          $mode = if ("${{ matrix.path-mode }}" -eq "near-limit") { "l" } else { "n" }
+          $reviewPath = Join-Path $env:RUNNER_TEMP "ftqb-${{ matrix.tractogram-format }}-$mode"
           "QA_ROOT=$reviewPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - uses: r-lib/actions/setup-r@v2
         with:
@@ -52,7 +54,7 @@ jobs:
           stopifnot(identical(installed$Version, unname(read.dcf(file.path(source, "DESCRIPTION"))[1L, "Version"])))
           cat(paste0("FIBRTRAQ_QA_LIBRARY=", normalizePath(library, winslash = "/"), "\n"),
               file = Sys.getenv("GITHUB_ENV"), append = TRUE)
-      - name: Generate and relocate the installed-package ${{ matrix.tractogram-format }} example
+      - name: Generate and relocate the ${{ matrix.tractogram-format }} example (${{ matrix.path-mode }})
         shell: Rscript {0}
         run: |
           script <- file.path(Sys.getenv("GITHUB_WORKSPACE"), ".github", "scripts", "browser-acceptance", "generate-fixture.R")
@@ -61,7 +63,7 @@ jobs:
           Sys.setenv(R_LIBS_USER = paste(libraries[nzchar(libraries)], collapse = .Platform$path.sep))
           status <- system2(file.path(R.home("bin"), "Rscript"),
                             c("--vanilla", shQuote(script), shQuote(Sys.getenv("QA_ROOT")),
-                              "${{ matrix.tractogram-format }}"))
+                              "${{ matrix.tractogram-format }}", "${{ matrix.path-mode }}"))
           stopifnot(status == 0L)
       - uses: actions/setup-node@v6
         with:
@@ -79,7 +81,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: windows-report-browser-${{ matrix.tractogram-format }}-${{ github.sha }}
+          name: windows-report-browser-${{ matrix.tractogram-format }}-${{ matrix.path-mode }}-${{ github.sha }}
           path: ${{ env.QA_ROOT }}
           retention-days: 14
           if-no-files-found: warn

@@ -111,7 +111,7 @@ test_that("bundled known-answer inputs are complete and checksummed", {
 })
 
 test_that("bundled example reproduces every scientific table and report", {
-  output_dir <- tempfile("fibrtraq-known-answer-test-")
+  output_dir <- tempfile("ftq-")
   result <- ftq_run_example(
     output_dir = output_dir,
     backend = "auto",
@@ -133,6 +133,14 @@ test_that("bundled example reproduces every scientific table and report", {
   expect_true(file.exists(result$primary_report))
   expect_true(file.exists(result$exploratory_report))
   expect_true(file.exists(result$interactive_3d_qc))
+  params <- result$data$parameters
+  planned <- ftq_regional_study_output_paths(output_dir, params$subject,
+    c(params$focal_label, names(result$data$target_masks)), params$focal_label,
+    params$description)
+  actual_files <- list.files(output_dir, recursive = TRUE, full.names = TRUE)
+  # A new report artifact must also enter preflight, so future filename changes
+  # cannot silently escape the Windows budget check.
+  expect_length(setdiff(normalizePath(actual_files, winslash = "/"), planned), 0L)
   expect_output(print(result), "Exact tables: 7/7", fixed = TRUE)
   expect_output(print(result), "Known answers: 18/18", fixed = TRUE)
 
