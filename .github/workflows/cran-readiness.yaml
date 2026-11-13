@@ -238,6 +238,9 @@ jobs:
             stop("Linux incoming spelling checks require verified Aspell dictionaries")
           }
           check_env <- ftq_cran_environment(Sys.getenv("FTQ_TEMP_PROFILE"), evidence, spelling)
+          check_env <- c(check_env, R_TESTS = ftq_cran_tempdir_hook(evidence))
+          write.dcf(as.data.frame(as.list(check_env), check.names = FALSE),
+                    file.path(evidence, "check-process-environment.dcf"))
           manual_build <- file.path(evidence, "manual-preflight-build")
           manual_pdf <- file.path(evidence, "manual-preflight.pdf")
           manual_log <- file.path(evidence, "manual-preflight.log")
@@ -261,6 +264,7 @@ jobs:
           writeLines(as.character(result$stdout), file.path(evidence, "check-stdout.txt"))
           writeLines(as.character(result$stderr), file.path(evidence, "check-stderr.txt"))
           print(result, test_output = TRUE)
+          ftq_cran_validate_test_tempdirs(evidence, unname(metadata[1L, "Package"]))
           # Early process failures can leave no parsed ERROR entry in rcmdcheck.
           # Require successful exit and completed test/manual checks independently.
           check_log <- file.path(evidence, paste0(metadata[1L, "Package"], ".Rcheck"), "00check.log")

@@ -86,7 +86,7 @@ test_that("regional study runner produces the complete report set", {
   fixture <- ftq_regional_study_fixture(
     file.path(tempdir(), "regional-study-complete-fixture")
   )
-  output_dir <- file.path(tempdir(), "regional-study-complete-output")
+  output_dir <- file.path(tempdir(), "regional-output")
   result <- ftq_run_regional_study(
     tractograms = c(subject1 = fixture$tractogram),
     region_masks = list(subject1 = fixture$masks),
@@ -155,7 +155,7 @@ test_that("regional study runner produces the complete report set", {
 test_that("standard runs omit unused preparation and context folders but retain density provenance", {
   skip_if_not_installed("RNifti")
   skip_if_not_installed("freesurferformats")
-  root <- tempfile("regional-compact-context-")
+  root <- tempfile("f-")
   on.exit(unlink(root, recursive = TRUE), add = TRUE)
   fixture <- ftq_regional_study_fixture(file.path(root, "inputs"))
   output_dir <- file.path(root, "results")

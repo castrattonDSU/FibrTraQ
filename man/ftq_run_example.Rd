@@ -5,7 +5,7 @@
 \title{Run and verify the bundled FibrTraQ example}
 \usage{
 ftq_run_example(
-  output_dir = tempfile("ftq-"),
+  output_dir = tempfile("f-"),
   backend = c("auto", "cpp", "r"),
   overwrite = FALSE,
   verbose = TRUE,

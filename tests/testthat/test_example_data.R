@@ -111,7 +111,7 @@ test_that("bundled known-answer inputs are complete and checksummed", {
 })
 
 test_that("bundled example reproduces every scientific table and report", {
-  output_dir <- tempfile("ftq-")
+  output_dir <- tempfile("f-")
   result <- ftq_run_example(
     output_dir = output_dir,
     backend = "auto",

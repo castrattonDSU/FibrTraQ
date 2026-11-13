@@ -15,7 +15,7 @@ status <- system2(file.path(R.home("bin"), "R"),
   c("CMD", "INSTALL", paste0("--library=", shQuote(library)), shQuote(archive)),
   stdout = install_log, stderr = install_log, timeout = 300)
 if (!identical(status, 0L)) stop("The archived 0.3.3 package did not install; inspect install.log")
-check_env <- ftq_cran_environment("long-temp", evidence)
+check_env <- ftq_cran_environment("long-temp", evidence, subprocess = "direct")
 result <- callr::r(function(library, evidence) {
   .libPaths(c(library, .libPaths()))
   library(FibrTraQ, lib.loc = library)

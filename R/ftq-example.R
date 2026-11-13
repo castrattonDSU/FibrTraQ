@@ -357,7 +357,7 @@ ftq_example_data <- function(verify = TRUE) {
 #' example$report_index
 #' }
 ftq_run_example <- function(
-    output_dir = tempfile("ftq-"),
+    output_dir = tempfile("f-"),
     backend = c("auto", "cpp", "r"),
     overwrite = FALSE,
     verbose = TRUE,

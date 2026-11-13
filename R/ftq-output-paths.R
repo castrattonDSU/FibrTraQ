@@ -72,7 +72,9 @@ ftq_absolute_output_path <- function(path) {
   }
   ancestor <- normalizePath(ancestor, winslash = "/", mustWork = FALSE)
   if (!length(tail)) return(ancestor)
-  do.call(file.path, as.list(c(ancestor, tail)))
+  # file.path("C:/", "new") can retain the root's slash and add another on
+  # Windows. Remove only trailing separators, preserving UNC's leading //.
+  paste0(sub("/+$", "", ancestor), "/", paste(tail, collapse = "/"))
 }
 
 ftq_run_output_paths <- function(output_dir, prefix, target_labels = NULL,

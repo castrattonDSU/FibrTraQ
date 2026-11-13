@@ -53,6 +53,17 @@ test_that("relative output roots resolve before checking without creating direct
   expect_false(dir.exists("new"))
 })
 
+test_that("nonexistent output roots retain exactly one separator after the filesystem root", {
+  # On Windows this walks back to an existing drive root (for example C:/);
+  # on Unix it walks back to /. Neither case may introduce C:// or //new.
+  root <- normalizePath("/", winslash = "/", mustWork = TRUE)
+  leaf <- basename(tempfile("ftq-missing-"))
+  expected <- paste0(sub("/+$", "", root), "/", leaf, "/nested")
+  expect_false(dir.exists(dirname(expected)))
+  expect_identical(ftq_absolute_output_path(expected), expected)
+  expect_false(dir.exists(dirname(expected)))
+})
+
 test_that("file and regional workflows reject long paths before any outputs or analysis", {
   example <- ftq_example_data()
   root <- file.path(tempdir(), paste(rep("long-output-", 18), collapse = ""))

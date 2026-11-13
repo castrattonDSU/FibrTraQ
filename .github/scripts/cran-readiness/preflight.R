@@ -67,8 +67,10 @@ ftq_cran_unexpected_notes <- function(notes, maintainer) {
   notes[!vapply(notes, allowed, logical(1L))]
 }
 
-ftq_cran_environment <- function(profile, evidence, spelling = FALSE) {
+ftq_cran_environment <- function(profile, evidence, spelling = FALSE,
+                                 subprocess = c("check", "direct")) {
   profile <- match.arg(profile, c("normal", "long-temp"))
+  subprocess <- match.arg(subprocess)
   env <- c(NOT_CRAN = "false", `_R_CHECK_FORCE_SUGGESTS_` = "true",
            `_R_CHECK_CRAN_INCOMING_` = "true",
            `_R_CHECK_CRAN_INCOMING_REMOTE_` = "true",
@@ -76,13 +78,19 @@ ftq_cran_environment <- function(profile, evidence, spelling = FALSE) {
            `_R_CHECK_CRAN_INCOMING_USE_ASPELL_` = if (spelling) "true" else "false",
            `_R_CHECK_RD_VALIDATE_RD2HTML_` = "true",
            `_R_CHECK_SYSTEM_CLOCK_` = "true")
-  if (profile == "long-temp") {
-    if (.Platform$OS.type != "windows") stop("The long-temp profile requires Windows")
+  windows <- .Platform$OS.type == "windows"
+  if (profile == "long-temp" && !windows) stop("The long-temp profile requires Windows")
+  if (windows && (subprocess == "check" || profile == "long-temp")) {
     root <- normalizePath(Sys.getenv("RUNNER_TEMP"), winslash = "/", mustWork = TRUE)
-    # R appends /RtmpXXXXXX: target 46 characters (CRAN's observed prefix was 44).
-    padding <- 46L - 11L - nchar(root) - 1L
-    if (padding < 4L) stop("Runner temp root is too long to calibrate CRAN-depth paths")
-    parent <- file.path(root, paste0("cran", strrep("t", padding - 4L)))
+    # --as-cran adds /RtmpXXXXXX/working_dir/RtmpXXXXXX (34 characters).
+    # A direct R child adds only /RtmpXXXXXX (11 characters).
+    suffix <- if (subprocess == "check") 34L else 11L
+    target <- if (profile == "long-temp") 46L else 44L
+    parent_length <- max(nchar(root), target - suffix)
+    if (parent_length == nchar(root) + 1L) parent_length <- parent_length + 1L
+    if (parent_length + suffix > 50L) stop("Runner temp root is too long to calibrate CRAN-depth paths")
+    padding <- parent_length - nchar(root)
+    parent <- if (!padding) root else file.path(root, strrep("t", padding - 1L))
     dir.create(parent, recursive = TRUE, showWarnings = FALSE)
     env <- c(env, TMPDIR = parent, TMP = parent, TEMP = parent)
   }
@@ -91,17 +99,63 @@ ftq_cran_environment <- function(profile, evidence, spelling = FALSE) {
     path <- tempfile("write-probe-")
     writable <- file.create(path)
     unlink(path)
-    list(Tempdir = normalizePath(tempdir(), winslash = "/"),
-         TempdirCharacters = nchar(normalizePath(tempdir(), winslash = "/")),
+    list(StartupProbeTempdir = normalizePath(tempdir(), winslash = "/"),
+         StartupProbeCharacters = nchar(normalizePath(tempdir(), winslash = "/")),
          Writable = writable, RVersion = R.version.string)
   }, env = env, user_profile = FALSE, system_profile = FALSE)
-  write.dcf(as.data.frame(c(list(Profile = profile), probe, as.list(env)), check.names = FALSE),
+  expected <- probe$StartupProbeCharacters + if (subprocess == "check") 23L else 0L
+  write.dcf(as.data.frame(c(list(Profile = profile, Subprocess = subprocess,
+                                ExpectedTestTempdirCharacters = expected), probe, as.list(env)),
+                          check.names = FALSE),
             file.path(evidence, "check-environment.dcf"))
   if (!isTRUE(probe$Writable)) stop("Fresh R process could not write its temporary directory")
-  if (profile == "long-temp" && !(probe$TempdirCharacters >= 44L && probe$TempdirCharacters <= 50L)) {
-    stop("Fresh R tempdir did not reproduce the requested 44-50 character depth")
+  if (windows && (subprocess == "check" || profile == "long-temp") &&
+      !(expected >= 44L && expected <= 50L)) {
+    stop("Expected subprocess tempdir did not meet the requested 44-50 character depth")
   }
   env
+}
+
+ftq_cran_tempdir_hook <- function(evidence) {
+  observations <- file.path(evidence, "process-tempdirs")
+  dir.create(observations, recursive = TRUE, showWarnings = FALSE)
+  observations <- normalizePath(observations, winslash = "/", mustWork = TRUE)
+  hook <- file.path(evidence, "record-check-tempdir.R")
+  expression <- substitute(local({
+    process <- Sys.getpid()
+    directory <- normalizePath(tempdir(), winslash = "/", mustWork = TRUE)
+    working <- normalizePath(getwd(), winslash = "/", mustWork = TRUE)
+    record <- data.frame(ProcessID = process, WorkingDirectory = working,
+                          Tempdir = directory, Characters = nchar(directory),
+                          Writable = file.access(directory, 2L) == 0L)
+    write.dcf(record, file.path(OBSERVATIONS, paste0("process-", process, ".dcf")))
+    if (grepl("[.]Rcheck/tests$", working)) {
+      reg.finalizer(.GlobalEnv, function(...) {
+        capture.output(sessionInfo(), file = file.path(OBSERVATIONS, paste0("session-", process, ".txt")))
+      }, onexit = TRUE)
+    }
+  }), list(OBSERVATIONS = observations))
+  writeLines(deparse(expression), hook)
+  normalizePath(hook, winslash = "/", mustWork = TRUE)
+}
+
+ftq_cran_validate_test_tempdirs <- function(evidence, package, windows = .Platform$OS.type == "windows") {
+  files <- list.files(file.path(evidence, "process-tempdirs"), "^process-.*[.]dcf$", full.names = TRUE)
+  if (!length(files)) stop("No actual R CMD check subprocess tempdirs were recorded")
+  records <- do.call(rbind, lapply(files, function(file) as.data.frame(read.dcf(file), stringsAsFactors = FALSE)))
+  tests <- normalizePath(file.path(evidence, paste0(package, ".Rcheck"), "tests"),
+                          winslash = "/", mustWork = TRUE)
+  observed <- records[tolower(records$WorkingDirectory) == tolower(tests), , drop = FALSE]
+  utils::write.csv(observed, file.path(evidence, "actual-test-tempdirs.csv"), row.names = FALSE)
+  if (!nrow(observed)) stop("The actual package-test R process did not record its temporary directory")
+  lengths <- as.integer(observed$Characters)
+  if (anyNA(lengths) || !all(lengths == nchar(observed$Tempdir)) || !all(observed$Writable == "TRUE")) {
+    stop("Actual test temporary-directory evidence is inconsistent or not writable")
+  }
+  if (windows && !all(lengths >= 44L & lengths <= 50L)) {
+    stop("Actual R CMD check tests did not use the required 44-50 character temporary-directory depth")
+  }
+  invisible(observed)
 }
 
 ftq_cran_setup_aspell <- function(evidence) {
