@@ -1,6 +1,16 @@
 # Internal output dictionary. Keep definitions tied to the table writers and
 # verify coverage against their generated schemas in test_output_guide.R.
-ftq_output_field_dictionary <- function() {
+ftq_output_field_dictionary <- local({
+  # Definitions are fixed for the loaded package. Build once per namespace;
+  # ordinary R copy-on-modify keeps callers from changing this private value.
+  dictionary <- NULL
+  function() {
+    if (is.null(dictionary)) dictionary <<- ftq_build_output_field_dictionary()
+    dictionary
+  }
+})
+
+ftq_build_output_field_dictionary <- function() {
   rows <- list()
   add <- function(family, column, definition, units = "text",
                   population = "one run", denominator = "not applicable",

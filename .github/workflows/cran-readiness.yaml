@@ -32,6 +32,9 @@ jobs:
         with:
           extra-packages: any::digest
           needs: check
+      - name: Test the CRAN readiness guards
+        shell: Rscript {0}
+        run: source(".github/scripts/cran-readiness/test-runtime.R")
       - name: Build the source archive with current R-release
         shell: Rscript {0}
         run: |
@@ -207,6 +210,7 @@ jobs:
         shell: Rscript {0}
         run: |
           source(".github/scripts/cran-readiness/preflight.R")
+          source(".github/scripts/cran-readiness/runtime.R")
           source <- file.path(Sys.getenv("RUNNER_TEMP"), "ftq-cran-source")
           evidence <- file.path(Sys.getenv("RUNNER_TEMP"), "ftq-cran-check")
           dir.create(evidence, recursive = TRUE, showWarnings = FALSE)
@@ -238,7 +242,8 @@ jobs:
             stop("Linux incoming spelling checks require verified Aspell dictionaries")
           }
           check_env <- ftq_cran_environment(Sys.getenv("FTQ_TEMP_PROFILE"), evidence, spelling)
-          check_env <- c(check_env, R_TESTS = ftq_cran_tempdir_hook(evidence))
+          check_env <- c(check_env, R_TESTS = ftq_cran_tempdir_hook(evidence),
+                         FTQ_TEST_TIMINGS_FILE = file.path(evidence, "test-timings.csv"))
           write.dcf(as.data.frame(as.list(check_env), check.names = FALSE),
                     file.path(evidence, "check-process-environment.dcf"))
           manual_build <- file.path(evidence, "manual-preflight-build")
@@ -254,38 +259,28 @@ jobs:
           if (!identical(manual_status, 0L) || !file.exists(manual_pdf) || file.info(manual_pdf)$size == 0) {
             stop("Indexed manual preflight failed; inspect manual-preflight.log and manual-preflight-build.")
           }
+          check_started <- unname(proc.time()["elapsed"])
           result <- rcmdcheck::rcmdcheck(
             archive, args = "--as-cran", check_dir = evidence,
             timeout = 1800, error_on = "never",
             env = check_env
           )
+          check_elapsed <- unname(proc.time()["elapsed"]) - check_started
           capture.output(print(result, test_output = TRUE),
                          file = file.path(evidence, "check-summary.txt"))
           writeLines(as.character(result$stdout), file.path(evidence, "check-stdout.txt"))
           writeLines(as.character(result$stderr), file.path(evidence, "check-stderr.txt"))
           print(result, test_output = TRUE)
-          ftq_cran_validate_test_tempdirs(evidence, unname(metadata[1L, "Package"]))
           # Early process failures can leave no parsed ERROR entry in rcmdcheck.
           # Require successful exit and completed test/manual checks independently.
           check_log <- file.path(evidence, paste0(metadata[1L, "Package"], ".Rcheck"), "00check.log")
           lines <- if (file.exists(check_log)) trimws(readLines(check_log, warn = FALSE)) else character()
-          completion_checks <- function(result, lines) {
-            stage_ok <- function(stage) {
-              pattern <- paste0("^\\* checking ", stage, " \\.\\.\\.( \\[[^]]+\\])? OK$")
-              any(grepl(pattern, lines, perl = TRUE))
-            }
-            c(ProcessSucceeded = identical(result$status, 0L),
-              NoTimeout = !isTRUE(result$timeout),
-              CheckFinished = identical(tail(grep("^\\* ", lines, value = TRUE), 1L), "* DONE"),
-              TestsPassed = stage_ok("tests"),
-              PDFManualPassed = stage_ok("PDF version of manual"),
-              HTMLManualPassed = stage_ok("HTML version of manual") &&
-                !any(grepl("Skipping checking HTML validation", lines, fixed = TRUE)))
-          }
-          completed <- completion_checks(result, lines)
+          completed <- ftq_cran_check_completion(result, lines)
+          runtime <- ftq_cran_check_runtime(result$duration, check_elapsed, lines, evidence)
           status <- if (length(result$status) == 1L) as.character(result$status) else "missing"
           write.dcf(as.data.frame(c(list(ProcessExitStatus = status), as.list(completed))),
                     file.path(evidence, "check-completion.dcf"))
+          ftq_cran_validate_test_tempdirs(evidence, unname(metadata[1L, "Package"]))
           if (!all(completed)) {
             stop("CRAN readiness check did not complete successfully: ",
                  paste(names(completed)[!completed], collapse = ", "),
@@ -299,6 +294,11 @@ jobs:
             stop("CRAN readiness check has errors or warnings; inspect the retained evidence.")
           }
           if (length(unexpected)) stop("CRAN readiness check has unreviewed NOTE content; inspect unexpected-notes.txt.")
+          if (!all(runtime)) {
+            stop("CRAN readiness check failed the 360-second elapsed-time budget: ",
+                 paste(names(runtime)[!runtime], collapse = ", "),
+                 ". Inspect check-runtime.dcf and the retained timing evidence.")
+          }
       - name: Retain all check logs and the generated reference manual
         if: always()
         uses: actions/upload-artifact@v7

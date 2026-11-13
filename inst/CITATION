@@ -8,12 +8,12 @@ bibentry(
     person("Nicholas", "Cottam")
   ),
   year = "2026",
-  note = "R package version 0.3.4",
+  note = "R package version 0.3.5",
   url = "https://github.com/castrattonDSU/FibrTraQ",
   textVersion = paste(
     "Stratton C, Cottam N (2026).",
     "FibrTraQ: Voxel-Resolved Focal-ROI Target Profiling of Diffusion Tractograms.",
-    "R package version 0.3.4.",
+    "R package version 0.3.5.",
     "https://github.com/castrattonDSU/FibrTraQ"
   )
 )

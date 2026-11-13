@@ -1,11 +1,17 @@
 # Preparing the CRAN resubmission
 
-Version **0.3.4** is a resubmission candidate. CRAN returned the 0.3.3 first
-submission on November 13, 2026, for Windows report-writing failures and README
-links to files excluded from the source archive. FibrTraQ has not been accepted
-by CRAN. The GitHub installation in the README remains the supported route
-until CRAN publication is verified. The older `RELEASE.md` records the 0.3.1
-research-preview procedure; use this checklist for the CRAN resubmission.
+Version **0.3.5** is a resubmission candidate. CRAN's incoming functional tests
+passed for version 0.3.4, but the Windows overall check time was 11 minutes,
+exceeding the ten-minute guidance. Version 0.3.5 caches the fixed output-column
+dictionary after its first use, removing repeated construction during table
+and report generation. The existing scientific tests and report-rendering
+settings are retained. The earlier 0.3.3 submission required Windows
+report-path and README-link corrections, which remain in the package.
+
+FibrTraQ has not been accepted by CRAN. The GitHub installation in the README
+remains the supported route until CRAN publication is verified. The older
+`RELEASE.md` records the 0.3.1 research-preview procedure; use this checklist
+for the CRAN resubmission.
 
 ## 1. Review the candidate
 
@@ -36,16 +42,42 @@ manual is included in those checks. The check jobs verify the archive's
 SHA-256 checksum and source commit before running it. The check must exit
 successfully, finish its log, and complete the tests and PDF/HTML manual checks.
 An incomplete check fails even if its parsed error and warning counts are zero.
+
+Every completed check must also meet the internal 360-second elapsed-time
+limit: Linux, ordinary Windows and Windows with the deeper temporary root.
+This six-minute limit provides a margin below CRAN's ten-minute overall-check
+guidance; it is a project release gate, not a CRAN rule. Measure the complete
+`R CMD check` process, including installation, examples, tests and manuals,
+not only the test suite or selected stages. Keep detailed stage timings using
+`_R_CHECK_TIMINGS_=0` and the test logs. A timeout or an incomplete run cannot
+satisfy the runtime gate. Record the actual time for each environment in the
+submission evidence.
+
+The cache retains the original dictionary builder and field definitions.
+Regression tests check complete equivalence, construction once per cache and
+isolation from caller changes to returned values. Require the full existing
+suite and report-rendering coverage, together with those new tests. Review
+actual assertion, failure, warning and skip counts in each final check. See
+[CRAN runtime guidance](https://contributor.r-project.org/cran-cookbook/docs_issues.html#overall-checktime)
+and [repository policy](https://cran.r-project.org/web/packages/policies.html).
+
+The check artifacts include `check-runtime.dcf` with both reported and measured
+elapsed times, `check-stage-timings.csv` with the original stage timing strings,
+and `test-timings.csv` with per-test timings and assertion counts. Both elapsed
+time measurements must meet the 360-second limit. The longer process timeout
+is retained so a slow check can finish and preserve its diagnostics; it does
+not relax the release gate.
+
 Errors and warnings also fail the job. Every NOTE requires review, and an
 unexpected NOTE fails the release gate. Incoming-package, remote-resource,
 file-URI and system-clock checks remain enabled, all suggested packages are
 required, and tests run with `NOT_CRAN=false`. The additional incoming spelling
-check runs on Linux and requires a working Aspell installation and English dictionary; record
-those tools and review the flagged terms.
+check runs on Linux and requires a working Aspell installation and English
+dictionary; record those tools and review the flagged terms.
 
 Download and preserve the artifacts before their 30-day retention expires:
 
-- `cran-source-<commit>`: `FibrTraQ_0.3.4.tar.gz`, `source.dcf`, build log,
+- `cran-source-<commit>`: `FibrTraQ_0.3.5.tar.gz`, `source.dcf`, build log,
   source inventory and build-session details.
 - `cran-check-<platform>-<temp-profile>-<commit>`: complete check output, test results,
   reference manual, check summary and check-session details.
@@ -57,16 +89,18 @@ submission flagged the legitimate terms `ROI` (region of interest),
 `Tractograms`/`tractograms` (collections of reconstructed streamlines) and
 `tractography` (the reconstruction method); explain any repeated flags in the
 resubmission comments. Local checks on an older R version are useful additional
-evidence, not a replacement for these current-release and R-devel checks. Any source change requires a new
-archive and repeat checks.
+evidence, not a replacement for these current-release and R-devel checks. Any
+source change requires a new archive and repeat checks.
 
 ## 3. Assemble and authorize submission
 
 After the final checks, prepare `cran-comments.md` with the actual check
 platforms, R versions, results and explanations for remaining notes. Explain
-the Windows path correction and the README-link correction in the resubmission
-comments. Review the reference manual and archive inventory. Confirm that the
-source archive matches `source.dcf`; submit that archive rather than rebuilding it afterward.
+the runtime correction and retained coverage, including any intentional CRAN/CI
+differences. Retain the history of the Windows path and README-link corrections.
+Review the reference manual and archive inventory. Confirm that the source
+archive matches `source.dcf`; submit that archive rather than rebuilding it
+afterward.
 
 The listed maintainer is **Chase Stratton <cstratton@desu.edu>**. CRAN sends a
 confirmation email to that address. Submission and email confirmation require

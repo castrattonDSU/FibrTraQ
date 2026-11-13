@@ -1,3 +1,26 @@
+test_that("static dictionary is built once and returned values cannot change its cache", {
+  expected <- FibrTraQ:::ftq_build_output_field_dictionary()
+  builds <- 0L
+  dictionary <- ftq_test_function_copy(FibrTraQ:::ftq_output_field_dictionary,
+    bindings = list(dictionary = NULL, ftq_build_output_field_dictionary = function() {
+      builds <<- builds + 1L
+      expected
+    }))
+  expect_identical(builds, 0L)
+  returned <- dictionary()
+  expect_identical(returned, expected)
+  expect_identical(builds, 1L)
+  returned$definition[1L] <- "Caller-specific notes"
+  returned$column <- NULL
+  names(returned)[1L] <- "changed"
+  rownames(returned)[1L] <- "changed"
+  attr(returned, "caller_attribute") <- TRUE
+  expect_identical(dictionary(), expected)
+  expect_identical(dictionary(), expected)
+  expect_identical(builds, 1L)
+  expect_identical(FibrTraQ:::ftq_output_field_dictionary(), expected)
+})
+
 test_that("output guide preserves existing guides and follows its own portable links", {
   root <- tempfile("output-guide- # 100%20 ")
   dir.create(root)

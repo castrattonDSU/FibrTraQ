@@ -1,7 +1,7 @@
 # FibrTraQ release review
 
 This document preserves the **0.3.1 research-preview checklist**. For the
-active **0.3.4 CRAN resubmission candidate**, follow [CRAN preparation](CRAN.md).
+active **0.3.5 CRAN resubmission candidate**, follow [CRAN preparation](CRAN.md).
 
 The checklist below was prepared for R package version **0.3.1**, licensed
 under **GPL-2.0-or-later**, with the proposed tag **v0.3.1-rc1**. It is not

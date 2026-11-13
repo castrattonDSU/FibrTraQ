@@ -30,8 +30,10 @@ remotes::install_github(
 )
 ```
 
-Version 0.3.4 is being prepared for CRAN resubmission after the 0.3.3
-incoming checks identified Windows report-path and documentation-link issues.
+Version 0.3.5 is being prepared for CRAN resubmission. The 0.3.4 incoming
+tests passed, but the Windows check exceeded CRAN's overall time guidance.
+This revision reuses fixed output-column definitions during report generation
+while retaining the existing tests and report-rendering settings.
 FibrTraQ is not yet available through `install.packages("FibrTraQ")`; use the
 GitHub installation above until a CRAN release is announced.
 

@@ -77,7 +77,8 @@ ftq_cran_environment <- function(profile, evidence, spelling = FALSE,
            `_R_CHECK_CRAN_INCOMING_CHECK_FILE_URIS_` = "true",
            `_R_CHECK_CRAN_INCOMING_USE_ASPELL_` = if (spelling) "true" else "false",
            `_R_CHECK_RD_VALIDATE_RD2HTML_` = "true",
-           `_R_CHECK_SYSTEM_CLOCK_` = "true")
+           `_R_CHECK_SYSTEM_CLOCK_` = "true",
+           `_R_CHECK_TIMINGS_` = "0")
   windows <- .Platform$OS.type == "windows"
   if (profile == "long-temp" && !windows) stop("The long-temp profile requires Windows")
   if (windows && (subprocess == "check" || profile == "long-temp")) {

@@ -1,6 +1,21 @@
 # FibrTraQ changes
 
-## 0.3.4 (CRAN resubmission candidate; unreleased)
+## 0.3.5 (CRAN resubmission candidate; unreleased)
+
+- Cache the fixed output-column dictionary after its first use in each loaded
+  package instance, removing repeated construction during table and report
+  generation. The original builder and field definitions are retained.
+- Added regression checks for complete dictionary equivalence, construction
+  once per cache and isolation from caller changes to returned data and
+  attributes. The existing tests and report-rendering settings are retained.
+- Require a 360-second completed-check limit in all three CRAN-readiness jobs,
+  with independent elapsed-time measurements and detailed stage and test
+  timings. This six-minute release gate is an internal margin below CRAN's
+  ten-minute guidance, not a CRAN requirement. The correction follows the
+  11-minute Windows incoming check for version 0.3.4, whose functional tests
+  passed.
+
+## 0.3.4 (CRAN resubmission; not accepted)
 
 - Check planned Windows output paths before regional analysis and explain how
   to shorten an unsupported destination. Existing output names and scientific
