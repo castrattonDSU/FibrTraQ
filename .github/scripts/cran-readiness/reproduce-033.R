@@ -51,10 +51,17 @@ result <- callr::r(function(library, evidence) {
 jsonlite::write_json(result, file.path(evidence, "reproduction.json"),
                      auto_unbox = TRUE, pretty = TRUE, null = "null")
 writeLines(c(result$error, result$warnings), file.path(evidence, "captured-conditions.txt"))
-diagnosis <- ftq_cran_report_failure(result)
+configuration <- jsonlite::fromJSON(file.path(evidence, "windows-long-paths.json"))
+diagnosis <- ftq_cran_baseline_disposition(result, configuration)
 jsonlite::write_json(diagnosis, file.path(evidence, "reproduction-disposition.json"),
                      auto_unbox = TRUE, pretty = TRUE)
-if (!diagnosis$reproduced) {
-  stop("Original failure was not reproduced with an identified >=260-character report path; inspect the diagnostic evidence.")
+if (!diagnosis$accepted) {
+  stop("The archived 0.3.3 diagnostic had an unexpected outcome; inspect the diagnostic evidence.")
 }
-cat("Reproduced the original report-writing failure with an identified >=260-character path.\n")
+if (diagnosis$reproduced) {
+  cat("Reproduced the original report-writing failure with an identified >=260-character path.\n")
+} else {
+  cat("Archived 0.3.3 passed its known-answer checks with generated paths up to ",
+      diagnosis$maximum_generated_path, " characters. LongPathsEnabled=1 on this runner; ",
+      "the original CRAN failure was not reproduced in this environment.\n", sep = "")
+}

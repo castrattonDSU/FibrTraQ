@@ -4,7 +4,7 @@ name: CRAN readiness
   workflow_dispatch:
     inputs:
       reproduce_033:
-        description: Reproduce the archived 0.3.3 Windows report-writing failure
+        description: Diagnose the archived 0.3.3 Windows report-writing behavior
         type: boolean
         default: false
 
@@ -339,11 +339,11 @@ jobs:
           Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name LongPathsEnabled |
             Select-Object LongPathsEnabled |
             ConvertTo-Json | Set-Content (Join-Path $evidence 'windows-long-paths.json')
-      - name: Reproduce the report-writing failure from the exact 0.3.3 archive
+      - name: Diagnose report writing from the exact 0.3.3 archive
         shell: Rscript {0}
         run: |
           source(".github/scripts/cran-readiness/reproduce-033.R")
-      - name: Retain the original failure and partial outputs
+      - name: Retain the baseline diagnostic and generated outputs
         if: always()
         uses: actions/upload-artifact@v7
         with:

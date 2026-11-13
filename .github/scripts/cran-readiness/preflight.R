@@ -95,7 +95,7 @@ ftq_cran_environment <- function(profile, evidence, spelling = FALSE) {
          TempdirCharacters = nchar(normalizePath(tempdir(), winslash = "/")),
          Writable = writable, RVersion = R.version.string)
   }, env = env, user_profile = FALSE, system_profile = FALSE)
-  write.dcf(as.data.frame(c(list(Profile = profile), probe, as.list(env))),
+  write.dcf(as.data.frame(c(list(Profile = profile), probe, as.list(env)), check.names = FALSE),
             file.path(evidence, "check-environment.dcf"))
   if (!isTRUE(probe$Writable)) stop("Fresh R process could not write its temporary directory")
   if (profile == "long-temp" && !(probe$TempdirCharacters >= 44L && probe$TempdirCharacters <= 50L)) {
@@ -144,4 +144,29 @@ ftq_cran_report_failure <- function(result) {
   list(reproduced = report_error && length(paths) > 0L,
        recognized_report_error = report_error, long_paths = paths,
        path_characters = nchar(paths))
+}
+
+ftq_cran_baseline_disposition <- function(result, configuration) {
+  diagnosis <- ftq_cran_report_failure(result)
+  files <- result$files
+  measured <- is.data.frame(files) && nrow(files) > 0L &&
+    all(c("Source", "Characters", "Copied") %in% names(files)) &&
+    is.character(files$Source) && is.numeric(files$Characters) &&
+    is.logical(files$Copied) && all(!is.na(files$Source)) &&
+    isTRUE(all(files$Characters == nchar(files$Source))) && isTRUE(all(files$Copied))
+  maximum <- if (measured) max(files$Characters) else NA_integer_
+  enabled <- is.numeric(configuration$LongPathsEnabled) &&
+    length(configuration$LongPathsEnabled) == 1L &&
+    isTRUE(configuration$LongPathsEnabled == 1L)
+  completed <- is.null(result$error) && !length(result$warnings) &&
+    isTRUE(result$example_passed)
+  outcome <- if (diagnosis$reproduced) {
+    "reproduced"
+  } else if (completed && enabled && isTRUE(maximum >= 260L)) {
+    "not_reproduced_long_paths_enabled"
+  } else {
+    "unexpected_outcome"
+  }
+  c(diagnosis, list(outcome = outcome, accepted = outcome != "unexpected_outcome",
+                   long_paths_enabled = enabled, maximum_generated_path = maximum))
 }
