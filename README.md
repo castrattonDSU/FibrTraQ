@@ -76,7 +76,7 @@ library(FibrTraQ)
 
 subject_id <- "subject-001"
 node_dir <- "/absolute/path/to/input-nodes"
-track_dir <- "/absolute/path/to/input-trk"
+trk_dir <- "/absolute/path/to/input-trk"
 ref_dir <- "/absolute/path/to/ref-image" # optional, same subject and spatial grid as the masks
 output_dir <- "/absolute/path/to/new-fibrtraq-results"
 
@@ -87,7 +87,7 @@ targets <- c(
 )
 
 analysis <- ftq_run_files(
-  tractogram = file.path(track_dir, "tractogram.trk"),
+  tractogram = file.path(trk_dir, "tractogram.trk"),
   focal_mask = file.path(node_dir, "cerebellum.nii.gz"),
   target_masks = targets,
   reference_image = file.path(ref_dir, "reference.nii.gz"),
@@ -269,7 +269,7 @@ no-flip voxel-millimeter coordinates are not a universal setting.
 library(FibrTraQ)
 
 node_dir <- "/absolute/path/to/input-nodes"
-track_dir <- "/absolute/path/to/input-tractograms"
+trk_dir <- "/absolute/path/to/input-tractograms"
 ref_dir <- "/absolute/path/to/reference-images"
 output_root <- "/absolute/path/to/new-cohort-results"
 
@@ -291,7 +291,7 @@ for (i in seq_len(nrow(subjects))) {
   )
 
   analyses[[subject_id]] <- ftq_run_files(
-    tractogram = file.path(track_dir, subjects$tractogram[i]),
+    tractogram = file.path(trk_dir, subjects$tractogram[i]),
     focal_mask = file.path(node_dir, paste0(subject_id, "_cerebellum.nii.gz")),
     target_masks = targets,
     reference_image = file.path(ref_dir, paste0(subject_id, "_reference.nii.gz")),
