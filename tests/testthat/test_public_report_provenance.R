@@ -19,7 +19,8 @@ test_that("primary report manifest recovers exact companion identity and method"
   expect_identical(resolved$local_search_radius_mm, 3.25)
   expect_identical(resolved$focal_assignment_mode, "first_intersection")
   expect_null(resolved$provenance_warning)
-  expect_identical(resolved$provenance_metadata_json, metadata)
+  expect_identical(normalizePath(resolved$provenance_metadata_json, mustWork = TRUE),
+                   normalizePath(metadata, mustWork = TRUE))
   explicit <- list(subject = "S1c", prefix = "new-view", analysis = list(
     target_intersection_mode = "local_search", local_search_radius_mm = 3.25))
   combined <- FibrTraQ:::ftq_report_resolve_manifest(input, explicit)

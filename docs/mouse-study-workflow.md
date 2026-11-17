@@ -1,31 +1,13 @@
 # Review one mouse brain: S1c cerebellum
 
 This recipe runs the same public workflow as the [README](../README.md):
-install FibrTraQ from GitHub, check the bundled example, run one analysis with
-`ftq_run_files()`, and open the report index. It uses the **exact filenames and
+run one analysis with `fibrtraq_single()` and open its HTML report. It uses the **exact filenames and
 audited settings for the study's S1c mouse**. These study inputs are not bundled
 with the package; you need an authorized copy of the `FibrTraQ-data` folder.
 
-## 1. Install from GitHub
+## 1. Install the matching package revision
 
-In a fresh R session, run the README installation commands:
-
-```r
-install.packages("remotes")
-remotes::install_github(
-  "castrattonDSU/FibrTraQ",
-  ref = "main",
-  dependencies = NA,
-  upgrade = "never",
-  force = TRUE
-)
-```
-
-If the repository is private, your GitHub account needs access and R needs an
-already configured GitHub credential. Use your existing authentication; do not
-put an authentication key in the script. For a reproducible review, replace
-`"main"` with the approved release tag or full commit SHA supplied with that
-review. **Restart R after installation.**
+Follow the [installation steps](../README.md#install) for the two-command package revision, then restart R. Run the bundled example in the README if you want to verify your installation first.
 
 ## 2. Open the script and set two folder paths
 
@@ -68,20 +50,19 @@ these six inputs and refuses an existing output folder before writing results.
 
 ## 3. Run the script
 
-Run the saved script from top to bottom. It first runs the small synthetic
-known-answer example and stops if that validation fails. It then creates the
-regional union mask and runs S1c with cerebellum as the focal ROI and cerebrum,
+Run the saved script from top to bottom. It runs `fibrtraq_single()` with the
+regional union mask and the cerebellum as the focal ROI, with cerebrum,
 pontine, and medullaspinal as targets. All standard reports, maps, and tables
-are generated.
+are generated in one output folder.
 
 The settings preserve the audited mouse workflow:
 
 | Setting | Meaning for this study |
 |---|---|
-| Union of all four regional masks | Defines the `local` region; it is larger than the focal cerebellum |
+| `local_mask = "union"` | Defines the `local` region; it is larger than the focal cerebellum |
 | `assignment_mode = "local_search"`, `search_radius_mm = 1` | Uses the 1 mm endpoint search to assign target connections |
 | `track_space = "voxelmm"`, `discretization = "round"`, no axis flips | Retains the established mapping for these tractogram and mask files |
-| `streamline_voxelization_mode = "segment_interpolation"` | Includes voxels traversed between stored streamline points |
+| `streamline_voxelization_mode = "segment_interpolation"` | Samples additional points along segments between stored streamline points |
 | `reheader_image_to_mask_grid = TRUE` | Copies this reference image onto the mask header, without resampling, after the dataset audit established voxel-index correspondence |
 
 The reheader setting is specific to these audited files. For another dataset,
@@ -93,31 +74,11 @@ biological accuracy.
 
 ## 4. Review the reports
 
-The script opens `fibrtraq-report-index.html` inside your chosen output folder.
-Choose **Results** for `S1c / cerebellum`. From that page you can review:
+In RStudio the script opens the report in `S1c/cerebellum/`. Review the RSC table and density previews first. Select a destination in the table to open its count map, or open the 3D viewer to inspect sampled streamlines. All images are in `figures/`, CSVs in `tables/`, and core
+NIfTI images in `maps/`. This recipe prepares the regional union mask and a reference in
+`S1c/prepared/` for its audited reheader step.
 
-- the RSC summary, spatial previews, complete tables, and maps;
-- the **Target report** for supporting patterns and distributions;
-- the interactive 3-D QC viewer for the sampled streamlines and ROI context;
-- the output guide for column definitions and denominators.
+For a quick review, choose one destination and read its unique streamline count, connected focal-voxel count and RSC percentage. Open that destination’s NIfTI from the table. Targets can share focal voxels, so their RSC percentages may sum to more than 100%. [Interpretation guide](interpretation.md)
 
-The script checks that the analysis and all three reports completed, then
-prints their paths. The synthetic example has its own index, also printed by
-the script; open it with `browseURL(demo$report_index)` if desired.
-
-The Target report and its five images are in `S1c/cerebellum/figures/`.
-Its primary-target lookup CSV is in `S1c/cerebellum/`. The main report is
-under `S1c/cerebellum/reports/`, with `report-figures/` for its images and
-`tables/` for complete ranked CSVs. Every ranked CSV includes all focal
-voxels, including those with zero counts. This mouse recipe needs a prepared
-reference image for the audited reheader step, so a nonempty `S1c/prepared/`
-folder is expected. Existing result folders are not changed.
-
-Target RSC percentages describe overlapping focal-voxel memberships and do
-not need to add to 100%. Read the [interpretation guide](interpretation.md)
-alongside the report when comparing those values.
-
-To share or move the results, keep the **entire output folder** together and
-open its report index after copying or extracting it. Sending only the HTML
-summary leaves its linked reports and figures behind. For another review run,
+To share the run, zip the directory printed under **Share this folder** and have the recipient extract it before opening the HTML. For another review run,
 choose a new `output_dir`; the script preserves previous results.

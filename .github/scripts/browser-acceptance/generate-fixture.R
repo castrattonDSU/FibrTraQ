@@ -13,8 +13,12 @@ original <- file.path(root, "original report # %20 caf\u00e9")
 relocated <- file.path(root, "relocated report # %20 caf\u00e9")
 
 library(FibrTraQ)
+stopifnot(setequal(getNamespaceExports("FibrTraQ"), c("fibrtraq_single", "fibrtraq_study")))
+script_flag <- grep("^--file=", commandArgs(FALSE), value = TRUE)
+script_dir <- dirname(normalizePath(sub("^--file=", "", script_flag), mustWork = TRUE))
+research <- source(file.path(script_dir, "..", "..", "..", "archive", "load.R"))$value
 run_tck_example <- function(original, input_tag) {
-  data <- ftq_example_data(verify = TRUE)
+  data <- research$ftq_example_data(verify = TRUE)
   params <- data$parameters
   stopifnot(identical(params$track_space, "voxel"),
             identical(as.logical(params$axis_flip), rep(FALSE, 3L)))
@@ -61,14 +65,14 @@ run_tck_example <- function(original, input_tag) {
     for (track in tracks) {
       # freesurferformats versions return either coordinate matrices or
       # list records. Normalize the representation without changing points.
-      coords <- as_track(track)$coords
+      coords <- research$as_track(track)$coords
       writeBin(as.numeric(t(coords - 1)), con, size = 4L, endian = "little")
       writeBin(rep(NaN, 3L), con, size = 4L, endian = "little")
     }
     writeBin(rep(Inf, 3L), con, size = 4L, endian = "little")
   }
   write_tck()
-  analysis <- ftq_run_files(
+  analysis <- fibrtraq_single(
     tractogram = tractogram, focal_mask = focal, target_masks = targets,
     output_dir = original, subject = params$subject, focal_label = params$focal_label,
     local_mask = local, reference_image = reference, endpoint_contexts = contexts,
@@ -107,14 +111,11 @@ run_tck_example <- function(original, input_tag) {
   endpoint_context$checksum_md5[context_rows] <- unname(tools::md5sum(contexts))
   expected[["endpoint_context"]] <- file.path(input_dir, "expected-tck-endpoint-context.csv")
   utils::write.csv(endpoint_context, expected[["endpoint_context"]], row.names = FALSE)
-  tables <- getFromNamespace("ftq_example_compare_tables", "FibrTraQ")(actual, expected)
-  claims <- getFromNamespace("ftq_example_check_claims", "FibrTraQ")(
+  tables <- get("ftq_example_compare_tables", envir = research)(actual, expected)
+  claims <- get("ftq_example_check_claims", envir = research)(
     actual, expected, data$claims
   )
-  report_paths <- c(
-    report_index = analysis$report_index, primary_report = run$primary_report,
-    exploratory_report = run$exploratory_report, interactive_3d_qc = run$interactive_3d_qc
-  )
+  report_paths <- c(report_index = analysis$report_index)
   reports <- data.frame(
     artifact = names(report_paths), path = unname(report_paths),
     passed = file.exists(report_paths) & file.info(report_paths)$size > 0,
@@ -126,19 +127,15 @@ run_tck_example <- function(original, input_tag) {
     package_validation_passed = isTRUE(run$validation_passed),
     tables = tables, claims = claims, reports = reports
   )
-  getFromNamespace("ftq_write_regional_study_index", "FibrTraQ")(
-    run_index = analysis$index, path = analysis$report_index,
-    output_dir = original, description = params$description,
-    example_validation = validation
-  )
+  get("ftq_unified_example_validation", envir = research)(analysis$report_index, validation)
   # Recheck immutable source files after generating the independent encoding.
-  ftq_example_data(verify = TRUE)
+  research$ftq_example_data(verify = TRUE)
   c(list(analysis = analysis, validation = validation), as.list(report_paths))
 }
 
 run_example <- function(output_dir, input_tag) {
   if (format == "trk") {
-    ftq_run_example(output_dir = output_dir, backend = "cpp", verbose = FALSE)
+    research$ftq_run_example(output_dir = output_dir, backend = "cpp", verbose = FALSE)
   } else {
     run_tck_example(output_dir, input_tag)
   }
@@ -164,7 +161,7 @@ utf16_length <- function(paths) {
          }, numeric(1L), USE.NAMES = FALSE)
 }
 planned_paths <- function(output_dir) {
-  data <- ftq_example_data(verify = TRUE)
+  data <- research$ftq_example_data(verify = TRUE)
   params <- data$parameters
   getFromNamespace("ftq_regional_study_output_paths", "FibrTraQ")(
     output_dir, subjects = params$subject,
@@ -242,31 +239,112 @@ if (path_mode == "near-limit") {
     rejected_request = rejected_evidence
   )
 }
-dir.create(relocated)
-for (relative in files) {
-  destination <- file.path(relocated, relative)
-  dir.create(dirname(destination), recursive = TRUE, showWarnings = FALSE)
-  if (!file.copy(file.path(original, relative), destination, overwrite = FALSE)) {
-    stop("Could not copy report asset: ", relative)
+copy_bundle <- function(source, destination) {
+  paths <- report_files(source)
+  stopifnot(!file.exists(destination))
+  for (relative in paths) {
+    target <- file.path(destination, relative)
+    dir.create(dirname(target), recursive = TRUE, showWarnings = FALSE)
+    stopifnot(file.copy(file.path(source, relative), target))
   }
+  stopifnot(identical(report_files(destination), paths),
+            identical(unname(tools::md5sum(file.path(source, paths))),
+                      unname(tools::md5sum(file.path(destination, paths)))))
+  normalizePath(destination, winslash = "/", mustWork = TRUE)
 }
-stopifnot(identical(unname(tools::md5sum(file.path(original, files))),
-                    unname(tools::md5sum(file.path(relocated, files)))))
-relocated <- normalizePath(relocated, winslash = "/", mustWork = TRUE)
+check_layout <- function(directory, index, report_path) {
+  paths <- report_files(directory)
+  html <- paths[grepl("[.]html?$", paths, ignore.case = TRUE)]
+  stopifnot(length(html) == 1L,
+            identical(normalizePath(report_path), normalizePath(file.path(directory, html))),
+            !any(grepl("OUTPUTS_README|(^|/)(report-figures|reports)/|local-fraction(-valid)?[.]nii", paths)),
+            !any(basename(list.dirs(directory)) %in% c("reports", "report-figures", "prepared")),
+            all(index$analysis_status == "completed"), all(index$validation_passed),
+            all(index$interactive_3d_qc_status == "completed"))
+  for (i in seq_len(nrow(index))) {
+    focal_root <- file.path(directory, index$subject[i], index$focal_region[i])
+    figures <- list.files(file.path(focal_root, "figures"), pattern = "[.]png$")
+    stopifnot(any(grepl("exploratory", figures)), any(grepl("_fig_rsc-summary", figures)),
+              dir.exists(file.path(focal_root, "maps")),
+              file.exists(index$result_csv[i]), identical(basename(dirname(index$result_csv[i])), "tables"))
+  }
+  html
+}
+relative_path <- function(path, directory = original) {
+  path <- normalizePath(path, winslash = "/", mustWork = TRUE)
+  directory <- normalizePath(directory, winslash = "/", mustWork = TRUE)
+  stopifnot(startsWith(path, paste0(directory, "/")))
+  substring(path, nchar(directory) + 2L)
+}
+single_report <- check_layout(original, example$analysis$index, example$report_index)
+stopifnot(identical(dirname(single_report), file.path(example$analysis$index$subject,
+                                                      example$analysis$index$focal_region)))
+relocated <- copy_bundle(original, relocated)
 if (path_mode == "near-limit") {
   stopifnot(max(utf16_length(file.path(relocated, files))) == 259L)
 }
-relative_path <- function(path) {
-  path <- normalizePath(path, winslash = "/", mustWork = TRUE)
-  stopifnot(startsWith(path, paste0(original, "/")))
-  substring(path, nchar(original) + 2L)
+
+# Two synthetic subject IDs share the package-owned geometry. Swapping one
+# pair of masks changes the second subject's focal targets, so a stale result
+# can be distinguished from the newly selected one in the browser.
+source <- research$ftq_example_data()
+if (format == "tck") {
+  native <- file.path(root, "native-tck-inputs-baseline")
+  source$tractogram <- file.path(native, "sub-example_tractogram.tck")
+  source$focal_mask <- file.path(native, basename(source$focal_mask))
+  source$reference_image <- file.path(native, basename(source$reference_image))
+  source$target_masks[] <- file.path(native, basename(source$target_masks))
 }
-reports <- list(
-  index = relative_path(example$report_index),
-  results = relative_path(example$primary_report),
-  target = relative_path(example$exploratory_report),
-  viewer = relative_path(example$interactive_3d_qc)
+masks_A <- c(focal = source$focal_mask, cortex = source$target_masks[["cortex"]],
+             brainstem = source$target_masks[["brainstem"]])
+masks_B <- masks_A
+masks_B[c("focal", "cortex")] <- masks_A[c("cortex", "focal")]
+subjects <- c("sub-A", "sub-B")
+mask_sets <- setNames(list(masks_A, masks_B), subjects)
+cohort_original <- file.path(root, "study")
+# Read the sheet from a different directory than the R process. Copy the tiny
+# fixture inputs so the same relative cells work on every runner/drive.
+sheet_inputs <- file.path(root, "inputs")
+dir.create(sheet_inputs)
+inputs <- unique(c(source$tractogram, source$reference_image, unname(masks_A)))
+stopifnot(!anyDuplicated(basename(inputs)), all(file.copy(inputs, sheet_inputs)))
+sheet_path <- function(file) file.path("inputs", basename(file))
+sheet <- data.frame(subject = subjects, tractogram = sheet_path(source$tractogram),
+                    reference_image = sheet_path(source$reference_image), check.names = FALSE)
+for (region in names(masks_A)) {
+  sheet[[paste0("mask:", region)]] <- vapply(mask_sets, function(masks) {
+    sheet_path(masks[[region]])
+  }, character(1))
+}
+csv <- file.path(root, "study inputs.csv")
+utils::write.csv(sheet, csv, row.names = FALSE)
+study_args <- list(
+  study_sheet = csv, output_dir = cohort_original, focal_regions = c("focal", "cortex"),
+  track_space = if (format == "tck") "world" else source$parameters$track_space,
+  axis_flip = rep(FALSE, 3), discretization = "round",
+  backend = "cpp", sample_per_target = 6L, verbose = FALSE, progress = FALSE
 )
+checked <- do.call(fibrtraq_study, c(study_args, list(check_only = TRUE)))
+stopifnot(isTRUE(checked$passed), nrow(checked$index) == 4L, all(checked$index$passed),
+          !file.exists(cohort_original))
+study <- do.call(fibrtraq_study, study_args)
+cohort_report <- check_layout(cohort_original, study$index, study$report_index)
+stopifnot(nrow(study$index) == 4L, dirname(cohort_report) == ".")
+cohort_relocated <- file.path(root, "cohort moved # %20 caf\u00e9")
+if (path_mode == "near-limit") {
+  padding <- 259L - max(utf16_length(file.path(cohort_relocated, report_files(cohort_original))))
+  stopifnot(padding >= 0L)
+  cohort_relocated <- paste0(cohort_relocated, strrep("p", padding))
+}
+cohort_relocated <- copy_bundle(cohort_original, cohort_relocated)
+cohort_runs <- study$index[, c("subject", "focal_region")]
+cohort_runs$focal_voxels <- mapply(function(subject, focal_region) {
+  sum(RNifti::readNifti(mask_sets[[subject]][[focal_region]]) > 0)
+}, cohort_runs$subject, cohort_runs$focal_region, USE.NAMES = FALSE)
+cohort_runs$targets <- lapply(cohort_runs$focal_region, function(focal) setdiff(names(masks_A), focal))
+stopifnot(length(unique(cohort_runs$focal_voxels)) > 1L)
+cohort <- list(relocated_root = cohort_relocated, report = cohort_report,
+               runs = cohort_runs)
 metadata <- example$analysis$index$metadata_json[[1L]]
 manifest <- list(
   fixture = paste0("package-owned synthetic known-answer example (", toupper(format),
@@ -282,7 +360,11 @@ manifest <- list(
   os = unname(Sys.info()[["sysname"]]),
   original_root = original,
   relocated_root = relocated,
-  reports = reports,
+  report = single_report,
+  single_run = list(subject = example$analysis$index$subject[[1L]],
+                    focal_region = example$analysis$index$focal_region[[1L]],
+                    targets = as.list(names(source$target_masks))),
+  cohort = cohort,
   metadata = relative_path(metadata),
   html_files = as.list(files[grepl("[.]html$", files, ignore.case = TRUE)]),
   file_count = length(files),

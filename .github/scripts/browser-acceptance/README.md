@@ -4,7 +4,10 @@ The `Windows report browser check` workflow builds and installs the checked-out
 candidate on a native Windows runner. It uses only the package-owned synthetic
 example in a four-case matrix (`trk`, `tck` × `normal`, `near-limit`), copies each complete result
 bundle into a folder containing spaces, `#`, `%` and Unicode, then opens the
-copied HTML directly with `file://` URLs in Chromium.
+single report from the copied folder directly with `file://` URLs in Chromium.
+The fixture runs `fibrtraq_single()` and `fibrtraq_study()` from the installed
+package. The matching source checkout supplies the known-answer comparisons
+in `archive/`.
 The original outputs remain intact. No web server or external data are needed.
 
 The TCK case encodes the known synthetic points as native world-millimeter
@@ -13,11 +16,23 @@ Only format-specific provenance and copied-image checksums differ in its
 expected tables; the bundled inputs and scientific values remain unchanged.
 
 Each format verifies the same seven scientific tables and 18 declared values before
-testing local links, fragment targets, loaded report images, navigation from
-the index, CSV downloads, PNG opening, and actual canvas rendering during drag, edge
+testing local links, fragment targets, loaded images, integrated target figures,
+CSV downloads, PNG opening, and actual canvas rendering during drag, edge
 roll, zoom, reset, and a layer toggle. It checks advanced path/endpoint controls
 and captures the main views and a narrow viewer. Pixel checks inspect the centre
 of the scene so a moving compass alone cannot satisfy an interaction check.
+Each case checks and runs a two-row CSV study sheet with relative input paths.
+The check-only call validates all four subject and focal-region combinations
+before a results folder exists. The full study produces one HTML at its root.
+For the single example and each selected study analysis, the browser verifies
+the RSC table fits on a laptop's first screen and clicks each destination name
+to download the corresponding count map. The downloaded bytes must match that
+subject and focal region's relocated NIfTI. It checks the whole-folder sharing
+instructions, compares each study denominator with its input mask, follows
+figure and CSV links and opens the selected viewer on demand.
+The layout checks reject extra HTML files, duplicated output guides, old report
+directories, and the two retired local-fraction NIfTI maps.
+
 Playwright is pinned here as a development-only dependency; it is not installed
 with the R package.
 
@@ -27,7 +42,7 @@ loading of collapsed content while still rejecting missing or corrupt images.
 The evidence records initial and decoded image states and an expanded Results
 screenshot so the advanced figures can also be inspected.
 
-The normal cases retain the existing browser assertions. Each near-limit case
+The normal cases exercise both the single-run and study reports. Each near-limit case
 first creates a short-root baseline, then runs the complete analysis again in a
 nested root sized so that its longest generated file path is exactly 255 UTF-16
 code units. It checks the same scientific known answers and file inventory, then
@@ -87,5 +102,6 @@ node report-browser-check.cjs "C:/ftq-tck-long/browser-fixture.json"
 The optional second `generate-fixture.R` argument selects `trk` or `tck`;
 omitting it retains the `trk` default. The optional third argument selects
 `normal` (the default) or `near-limit`. Each output directory must be new.
-The browser script refuses non-Windows hosts
-so a different operating system cannot be mistaken for Windows evidence.
+Native acceptance requires Windows. For development on another OS, pass
+`--local-smoke` after the manifest path to run the browser interactions locally.
+The evidence records the platform and identifies that run as a smoke test.

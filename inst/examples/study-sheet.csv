@@ -1,0 +1,3 @@
+subject,tractogram,reference_image,mask:cerebellum,mask:cerebrum,mask:pontine,mask:medullaspinal
+001,001/tractogram.trk,001/reference.nii.gz,001/cerebellum.nii.gz,001/cerebrum.nii.gz,001/pontine.nii.gz,001/medullaspinal.nii.gz
+002,002/tractogram.tck,002/reference.nii.gz,002/cerebellum.nii.gz,002/cerebrum.nii.gz,002/pontine.nii.gz,002/medullaspinal.nii.gz

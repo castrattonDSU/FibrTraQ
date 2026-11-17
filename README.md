@@ -2,381 +2,142 @@
 
 [![R-CMD-check](https://github.com/castrattonDSU/FibrTraQ/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/castrattonDSU/FibrTraQ/actions/workflows/R-CMD-check.yaml)
 
-FibrTraQ is an analysis package that **assesses and quantifies the spatial extent of connectivity between a specified focal node (fNode) and an unlimited set of connecting nodes (cNodes)**. The primary outputs are in two formats: voxel-wise fNode heatmaps of associations with each cNode, and region-to-region spatial connectivity (RSC) tables reporting the percentage of focal voxels associated with each target. These outputs support comparisons of the spatial distribution of tractography-derived associations across regions and subjects. For quality control, a 3D viewer is also generated.
+FibrTraQ measures how tractography connections to each destination are distributed within a focal brain region. Supply a TrackVis (`.trk`) or MRtrix (`.tck`) tractogram and binary NIfTI masks (`.nii` or `.nii.gz`) for the focal region (fNode) and destinations (cNodes). Use a same-subject reference image on the mask grid for anatomical review.
 
-A C++ backend handles counting; runtime depends on the tractogram, masks, report settings and computer. Interpretation depends on biologically plausible tractography, accurate region masks and independently verified spatial alignment.
+| To analyze | Run | What opens in the report |
+|---|---|---|
+| One focal region in one subject | `fibrtraq_single()` | That subject’s target maps, connection tables and 3D viewer |
+| Several subjects or focal regions | `fibrtraq_study()` | The same results with a subject and focal-region selector |
 
-To run the package, you need a TrackVis `.trk` or MRtrix `.tck` tractogram and binary NIfTI masks (`.nii` or `.nii.gz`) for the fNode and each cNode. A same-subject, aligned reference image (such as b0, T1, T2 or FA) is optional for execution and strongly recommended for spatial review.
-
-**Research preview:** FibrTraQ's tests establish the documented counting behavior and computational reproducibility. Each dataset still requires independent spatial verification before its results are interpreted. Follow the [spatial-verification guide](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/spatial-verification.md) when bringing new inputs into the package.
-
-**Start here:** [Install and try the example](#install-and-try-the-rudimentary-example) ·
-[Single-subject analysis](#run-fibrtraq-on-a-single-subject) · [Read the results](#read-the-main-results) ·
-[Multiple subjects](#looping-across-subjects) · [Troubleshooting](#common-problems)
+[Try the bundled example](#try-the-bundled-example) · [Use your own files](#run-fibrtraq-on-a-single-subject) · [Run a study](#run-a-study) · [Read a target map](#read-the-main-results)
 
 <a id="1-install-fibrtraq"></a>
+<a id="install-and-try-the-rudimentary-example"></a>
 
-## Install and try the rudimentary example
+## Install
 
-FibrTraQ version 0.3.5 has been submitted to CRAN. FibrTraQ is not yet available through `install.packages("FibrTraQ")`; use the GitHub installation below until a CRAN release is announced. Package usage requires **R 4.0.0 or later**. In a fresh R or RStudio session, install the current version on GitHub's `main` branch:
+Use R 4.0.0 or later. These examples use the interface in development version `0.3.5.9002`. Once this revision is on GitHub’s `main` branch, install it from R with:
 
 ```r
-install.packages("remotes")
-remotes::install_github(
-  "castrattonDSU/FibrTraQ",
-  ref = "main",
-  dependencies = NA,
-  upgrade = "never",
-  force = TRUE
-)
+if (!requireNamespace("remotes", quietly = TRUE)) install.packages("remotes")
+remotes::install_github("castrattonDSU/FibrTraQ", upgrade = "never")
 ```
+
+Restart R after installation. For a reproducible study, install the same reviewed tag or commit on each workstation. Version 0.3.5 uses the earlier command names. [Fixed-version installation and local development](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/advanced-workflows.md#install-a-fixed-version)
 
 <a id="2-verify-the-installation"></a>
 
-Below is a supplementary basic example for observing the logic of the package. 
-To run this, first **Restart R**, then run the rudimentary example. No external data are needed:
+## Try the bundled example
+
+Paste this line into RStudio after installation. It runs the bundled synthetic tractogram in a temporary folder and opens its report.
 
 ```r
-library(FibrTraQ)
-
-demo <- ftq_run_example(
-  output_dir = file.path(tempdir(), "ftq-example"),
-  overwrite = TRUE
-)
-
-stopifnot(demo$validation$passed)
-browseURL(demo$report_index)
+source(system.file("examples", "fibrtraq-synthetic-example.R", package = "FibrTraQ", mustWork = TRUE))
 ```
 
-On the page that opens, choose **Results**. The main report contains an RSC summary table (which may be difficult to interpret in this basic example), an RSC histogram for visual examination, aggregate fNode streamline density heatmaps, fNode streamline connection density heatmaps per cNodes, maps of fNode voxels with no assigned streamlines, fNode local connection density heatmaps, and a fate summary table.
-
-At the top of the page are links to the **Target report** and a 3-D quality control viewer. Example files are in R's temporary directory; use a persistent output folder for your own analyses.
-
-In the 3-D viewer, drag to rotate freely, or drag near an edge to roll the view.
-Scroll or pinch with two fingers to zoom. **Reset Orientation** restores the
-initial anatomical view and zoom; the compass follows the rotation.
-
-<details>
-<summary>Compilers and reproducible versions</summary>
-
-The compiled backend is built during installation. If R requests a compiler, use Apple Command Line Tools on macOS, Rtools matching your R version on Windows, or an R-compatible C++ toolchain on Linux.
-
-`main` changes over time. For a study, install a reviewed release tag or full commit SHA and use that same revision across workstations. See [fixed-version installation and verification](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/advanced-workflows.md#install-a-fixed-version).
-
-</details>
+Look at **Unique streamline connections** in the destination table. The expected counts are **6 for cortex** and **4 for brainstem**. Both destinations reach both focal voxels, giving each an RSC of 100%. [Bundled expected tables](inst/extdata/fibrtraq-known-answer/expected)
 
 ## Run FibrTraQ on a single subject
 
-Start with a tractogram, one fNode and at least one specified cNode. Use nonempty, finite, binary 3-D NIfTI masks (`.nii` or `.nii.gz`). All masks and images must share the subject's voxel grid, including compatible NIfTI affines. The template below includes a 3-D reference image for spatial review. If it is unavailable, omit `reference_image`; the resulting density background cannot independently verify anatomy.
-
-**This is a template for your own files.** The filenames below are illustrative; replace each one with the name of your existing input. Set the four directories, subject identifier and ROI labels for your dataset. A publication describing the package and validation against a prior manual simplified version of this quantitative analysis (Cottam et al., 2023) is in preparation. Contact nickcottam4@gmail.com with questions regarding this dataset.
+Supply a tractogram, a focal mask, named destination masks and a new output directory. This example puts the files for subject `001` in one folder. Replace the paths and filenames with your own. The optional reference image should come from the same subject and match the mask grid.
 
 ```r
 library(FibrTraQ)
 
-subject_id <- "subject-001"
-node_dir <- "/absolute/path/to/input-nodes"
-trk_dir <- "/absolute/path/to/input-trk"
-ref_dir <- "/absolute/path/to/ref-image" # optional, same subject and spatial grid as the masks
-output_dir <- "/absolute/path/to/new-fibrtraq-results"
-
-targets <- c(
-  cerebrum = file.path(node_dir, "cerebrum.nii.gz"),
-  pontine = file.path(node_dir, "pontine.nii.gz"),
-  medullaspinal = file.path(node_dir, "medullaspinal.nii.gz")
+subject_dir <- "/absolute/path/to/study/001"
+analysis <- fibrtraq_single(
+  subject = "001", focal_label = "cerebellum",
+  tractogram = file.path(subject_dir, "tractogram.trk"),
+  focal_mask = file.path(subject_dir, "cerebellum.nii.gz"),
+  target_masks = c(cerebrum = file.path(subject_dir, "cerebrum.nii.gz"),
+                   pontine = file.path(subject_dir, "pontine.nii.gz"),
+                   medullaspinal = file.path(subject_dir, "medullaspinal.nii.gz")),
+  reference_image = file.path(subject_dir, "reference.nii.gz"),
+  output_dir = "/absolute/path/to/new-fibrtraq-results",
+  open = TRUE
 )
-
-analysis <- ftq_run_files(
-  tractogram = file.path(trk_dir, "tractogram.trk"),
-  focal_mask = file.path(node_dir, "cerebellum.nii.gz"),
-  target_masks = targets,
-  reference_image = file.path(ref_dir, "reference.nii.gz"),
-  output_dir = output_dir,
-  subject = subject_id,
-  focal_label = "cerebellum",
-  assignment_mode = "full_streamline"
-)
-
-analysis$index[, c(
-  "subject", "focal_region", "analysis_status", "validation_status"
-)]
-browseURL(analysis$report_index)
 ```
 
-### Using MRtrix `.tck` files
+To check these inputs first, add `check_only = TRUE` to the same call. The check reads inputs without counting streamlines or writing the results folder. Verify anatomical alignment separately. If you omit the reference image, the report can use a tractogram-density background. [Spatial verification](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/spatial-verification.md)
 
-Replace `"tractogram.trk"` with your `.tck` file; everything else stays the same.
-TCK coordinates are in real-world millimeters, so FibrTraQ places them using the
-NIfTI header. Leave `track_space = "auto"` (or set `"world"`) and don't add axis
-flips. Your reference NIfTI (or focal mask if no reference is supplied) must have
-valid, consistent spatial geometry and declared units. See [TCK input requirements](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/advanced-workflows.md#mrtrix-tck-inputs).
+For MRtrix, supply the `.tck` filename in `tractogram`. Its world coordinates use the NIfTI affine. Keep `track_space = "auto"` or `"world"` and leave `axis_flip` unset. For TrackVis (`.trk`), verify the exporter's coordinate convention against the anatomy. [TCK input requirements](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/advanced-workflows.md#mrtrix-tck-inputs)
 
-### Windows users
+The S1c mouse recipe gives the study’s actual filenames and audited settings. A manuscript describing validation against the earlier manual analysis (Cottam et al., 2023) is in preparation. Contact nickcottam4@gmail.com with questions about this dataset. [S1c mouse recipe](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/mouse-study-workflow.md)
 
-Use a short output path (e.g., `C:/FibrTraQ/run01`) and short subject and region
-labels, since FibrTraQ creates nested folders that can exceed Windows path limits.
-See [Windows output paths](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/advanced-workflows.md#windows-output-paths).
+<a id="looping-across-subjects"></a>
+<a id="run-a-regional-study"></a>
 
-### Outputs
+## Run a study
 
-Your output directory will contain reports, connection-density maps (NIfTI),
-figures, and data tables, in the same layout as the bundled example.
+Copy the two-row template into your study folder as `study-sheet.csv` and edit it. Each row identifies one subject. Use the exact tractogram filename and one `mask:<region>` column per region. The `reference_image` column is optional. File paths in the sheet are relative to the CSV’s folder or absolute. Keep IDs such as `001` as text when editing in a spreadsheet. [Study sheet template](inst/examples/study-sheet.csv)
 
-### How connections are assigned
+First check the subjects and regional masks together:
 
-- Targets are assigned from each streamline's full path.
-- `local`: the streamline stays entirely inside the fNode.
-- `local_search`: targets are assigned from the streamline's two endpoints,
-  using a search radius (in mm). Changing the radius does not change the fNode mask.
+```r
+library(FibrTraQ)
 
-### Check alignment before interpreting results
+sheet <- "/absolute/path/to/study/study-sheet.csv"
+results_dir <- "/absolute/path/to/new-cohort-results"
 
-Always review the spatial previews and 3-D QC. FibrTraQ will not run if your images
-are on mismatched grids; it won't resample them for you.
+checked <- fibrtraq_study(
+  study_sheet = sheet, focal_regions = "cerebellum",
+  output_dir = results_dir, check_only = TRUE
+)
+print(checked$index)
+stopifnot(checked$passed)
+```
 
-- `.trk`: if the best automatic alignment would require flipping an axis,
-  FibrTraQ stops and asks you to set `axis_flip` yourself.
-- `.tck`: no automatic alignment search is done; the file's coordinates are used directly.
+If a check fails, inspect `checked$checks` for the affected subject and input, correct it and rerun the check. When the check passes and you have verified alignment, run the study:
 
-Provide a `reference_image` for an anatomical background. Without one, the
-background shows streamline density only. Follow the
-[spatial verification steps](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/spatial-verification.md)
-for every dataset.
+```r
+study <- fibrtraq_study(
+  study_sheet = sheet, focal_regions = "cerebellum",
+  output_dir = results_dir, open = TRUE
+)
+```
 
-This analysis can be repeated for entire cohorts for subject-wise data.
-
-### Optional settings
-
-Add these arguments to `ftq_run_files()` when they apply:
-
-| Argument | Use |
-|---|---|
-| `local_mask = file.path(node_dir, "local-region.nii.gz")` | Define a local region other than the focal mask |
-| `endpoint_contexts = c(brain = file.path(node_dir, "brain-mask.nii.gz"))` | Check endpoint containment in trusted anatomy |
-| `bvals = file.path(ref_dir, "diffusion.bval")` | Supply one b-value for every volume of a 4-D reference |
-| `assignment_mode = "endpoint_voxels"` | Require an unambiguous focal/target endpoint-voxel pair |
-| `assignment_mode = "local_search", search_radius_mm = 1` | Require an unambiguous endpoint pair within the specified physical radius; choose the radius for your study |
-| `track_space = "voxelmm", axis_flip = c(FALSE, FALSE, FALSE)` | Pin a verified `.trk` mapping; this example requires confirmed voxel-millimeter coordinates with no axis flips. Native `.tck` uses `"world"` |
-| `report_slices = c(20L, 30L, 40L)` | Select existing one-based axial slices for density heatmap previews; automatic selection is the default |
-
-The [interpretation guide](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/interpretation.md#target-assignment-modes)
-explains the assignment rules and their limits. By default, `overwrite = FALSE`
-prevents existing outputs from being replaced, so use a new output directory for each run.
+The report has one cerebellum analysis per subject. Omit `focal_regions` to use every supplied region as the focal region in turn. Both commands use the active focal mask as the local region by default. To reproduce the regional study default from 0.3.5, specify `local_masks = "union"`. The choice affects local and fate summaries. Existing R workflows can also supply named vectors and lists directly. [Study inputs and local-mask settings](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/advanced-workflows.md#regional-study-input-structure)
 
 <a id="what-fibrtraq-writes"></a>
 <a id="interpret-results-correctly"></a>
 
 ## Read the main results
 
-The main report opens with the **RSC summary**, core maps, per-voxel data and
-fate/coverage summaries. Endpoint QC, target patterns, validation and provenance
-are in later sections.
+**Target NIfTI maps contain unweighted streamline counts.** With the defaults, a value of `3` at a cerebellar voxel in `*_target-medullaspinal.nii.gz` means that three distinct streamline records visited that focal voxel and also reached the medullaspinal mask. Returning to the same focal voxel or entering the target twice still contributes one. A streamline visiting two focal voxels contributes to both, and one reaching two destinations can contribute to both destination maps. Voxels outside the focal mask are zero.
 
-**RSC is the percentage of focal voxels associated with a given target:**
+By default, visits are determined from the stored tractogram points. Sparse streamlines may cross a voxel between points without recording a visit there. `streamline_voxelization_mode = "segment_interpolation"` also samples along the connecting segments. Selecting an endpoint assignment rule or `focal_assignment_mode = "first_intersection"` changes which connections or focal voxels receive a count. The report’s methods and run metadata record these choices. [Counting and interpretation](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/interpretation.md)
 
-```text
-RSC (%) = 100 × focal voxels with at least one association to this target
-               / all focal voxels
-```
+**Region-to-region spatial connectivity (RSC)** is the percentage of all focal voxels with a positive count for a destination. Focal voxels with zero assigned streamlines stay in the denominator. Multiple targets can reach the same focal voxel, so their percentages can sum to more than 100%. For the number of *distinct streamlines* connected to a target across the entire focal region, use **Unique streamline connections** in the report.
 
-- The denominator includes focal voxels with no assigned streamlines.
-- A focal voxel can be associated with several targets, so **RSC values across
-  targets do not need to sum to 100%**. The `local` row can also overlap target rows.
-- RSC is not the percentage of streamlines going to a target.
+### What to open or share
 
-Example from the bundled synthetic dataset, which has two focal voxels:
+After a run, R prints **Open this report** with the HTML path and **Share this folder** with the full output folder path. The examples open the report automatically. The destination table links each target to its NIfTI map when maps are generated. Use the subject and focal-region selector in a multi-analysis study. Select **3D QC viewer** to inspect sampled streamlines.
 
-| Target | Unique streamline connections | Connected focal voxels | RSC (%) |
-|---|---:|---:|---:|
-| cortex | 6 | 2 | 100 |
-| brainstem | 4 | 2 | 100 |
-
-Both focal voxels connect to both targets, so both RSC values are 100%, even
-though the streamline counts differ. Values come from the bundled
-[known-answer tables](inst/extdata/fibrtraq-known-answer/expected).
-
-### Where to find results
-
-| What you want | Where to look |
+| Inside each subject/focal-region folder | Contents |
 |---|---|
-| Unique streamline counts and target coverage | Main RSC summary; **Destination** identifies each target or the local comparison |
-| Where associations occur inside the focal ROI | Core NIfTI maps and spatial previews |
-| Every focal voxel and its counts | Complete per-voxel CSV; the readable all-voxel export adds coordinates and a column-role companion |
-| All focal voxels ordered by a target or metric | Ranked CSV downloads, including zero-count voxels |
-| Primary target, diversity and entropy patterns | Target report |
-| Local, nonlocal target-positive and nonlocal target-negative streamlines | Unique-streamline fate summary; read its stated denominator |
-| Parameter values, input provenance and computation checks | Readable Methods and Validation sections, with JSON downloads |
-| Exact field definitions, units, aliases and missing values | The report's output guide, also [included with the package](inst/output-guide/OUTPUTS_README.md) |
+| `figures/` | PNG figures and the viewer’s data |
+| `maps/` | NIfTI images, including one count map per destination |
+| `tables/` | Complete voxel counts, rankings, target lookup and summaries |
+| Metadata and validation JSON | Input files, settings and checks |
 
-### Notes on per-voxel data
-
-- A streamline can pass through several focal voxels, so **don't sum per-voxel
-  counts to get streamline totals.**
-- Local fraction = `local / tracks` for voxels where `tracks > 0`. Voxels with no
-  assigned streamlines can't be evaluated and are marked in a separate validity mask.
-- Ranked CSVs include every focal voxel, not just the top 50.
-- Use `*_per-voxel-hits.csv` for analysis. The coordinate-enriched version is for
-  inspection and coordinate lookup.
-
-### Output folders
-
-Start with `fibrtraq-report-index.html` in your output directory. The accompanying
-`fibrtraq-run-index.csv` records each analysis, its status and output paths.
-Field definitions are in the output guide linked from the reports.
-
-Within each `subjectID/fNode/` folder:
-
-- `figures/` contains the Target report HTML and its five images.
-- `maps/` contains core NIfTI maps and any tractogram-density background.
-- `reports/` contains the main report, with its images in `report-figures/`
-  and complete ranked CSVs in `tables/` inside the analysis report folder.
-- The primary-target lookup CSV is alongside `figures/`; other scientific
-  tables remain available through the report links.
-
-A subject's `prepared/` folder exists only when a derived image or mask is needed.
-
-Extra exploratory CSVs and maps are not written by default. Generate them with
-`ftq_exploratory_summary()`; see the
-[output inventory](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/advanced-workflows.md#what-fibrtraq-writes).
-
-### Before reporting results
-
-- Passing computational validation does not mean the results are biologically
-  valid. Anatomical QC is a separate step.
-- The 3-D viewer shows only a subset of streamlines. Use the full tables and maps
-  for quantitative results.
-
-See the [full interpretation guide](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/interpretation.md)
-and [output inventory](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/advanced-workflows.md#what-fibrtraq-writes).
-
-<a id="run-a-regional-study"></a>
-
-## Looping across subjects
-
-The template below repeats the single-subject analysis. Set all four directories
-and replace the example subject IDs and filenames with your own. Masks and
-reference images use the subject ID as a filename prefix, such as
-`subject-001_cerebellum.nii.gz`. List each tractogram's exact filename; `.trk`
-and `.tck` use the same call.
-
-First verify each subject's alignment using the
-[spatial-verification guide](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/spatial-verification.md).
-The template leaves coordinate selection at its defaults. For a production
-`.trk` analysis, pin the independently verified mapping for each subject;
-no-flip voxel-millimeter coordinates are not a universal setting.
-
-```r
-library(FibrTraQ)
-
-node_dir <- "/absolute/path/to/input-nodes"
-trk_dir <- "/absolute/path/to/input-tractograms"
-ref_dir <- "/absolute/path/to/reference-images"
-output_root <- "/absolute/path/to/new-cohort-results"
-
-subjects <- data.frame(
-  subject = c("subject-001", "subject-002"),
-  tractogram = c("subject-001.trk", "subject-002.tck")
-)
-
-analyses <- setNames(vector("list", nrow(subjects)), subjects$subject)
-
-for (i in seq_len(nrow(subjects))) {
-  subject_id <- subjects$subject[i]
-  message("Running ", subject_id, " (", i, " of ", nrow(subjects), ")")
-
-  targets <- c(
-    cerebrum = file.path(node_dir, paste0(subject_id, "_cerebrum.nii.gz")),
-    pontine = file.path(node_dir, paste0(subject_id, "_pontine.nii.gz")),
-    medullaspinal = file.path(node_dir, paste0(subject_id, "_medullaspinal.nii.gz"))
-  )
-
-  analyses[[subject_id]] <- ftq_run_files(
-    tractogram = file.path(trk_dir, subjects$tractogram[i]),
-    focal_mask = file.path(node_dir, paste0(subject_id, "_cerebellum.nii.gz")),
-    target_masks = targets,
-    reference_image = file.path(ref_dir, paste0(subject_id, "_reference.nii.gz")),
-    output_dir = file.path(output_root, paste0(subject_id, "-run")),
-    subject = subject_id,
-    focal_label = "cerebellum",
-    assignment_mode = "full_streamline"
-  )
-}
-
-# Open the first subject's report; change the index to review another subject.
-browseURL(analyses[[1L]]$report_index)
-```
-
-Each subject gets a separate results folder. If a call errors, the loop stops;
-resolve that error before continuing. Review each run's status and reports.
-If no anatomical reference is available, omit `reference_image`, as in the
-single-subject instructions.
-
-To make each region focal in turn across multiple subjects, use
-`ftq_run_regional_study()`. The [complete regional-study example](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/advanced-workflows.md#complete-regional-study-example)
-shows the named input lists and exact call. Its default `local_masks = "union"`
-uses the union of supplied regions, unlike the focal-mask default above.
-A two-subject, four-region study creates eight runs but still represents two
-biological subjects.
-
-<a id="manifest-workflow"></a>
-<a id="core-counting-function"></a>
-
-Other workflows: [manifest configuration](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/advanced-workflows.md#manifest-workflow),
-[in-memory analysis](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/advanced-workflows.md#core-counting-function),
-and the [S1c mouse-study recipe](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/mouse-study-workflow.md).
-
-<a id="sharing-and-opening-reports"></a>
-
-## Share the reports
-
-Share the **whole results folder** (or a ZIP of it), including subfolders, and
-extract it before opening `fibrtraq-report-index.html`. Links are relative, so the
-folder works on Windows, macOS and Linux. CSV/JSON files record original file
-paths, so check them for identifying information before sharing publicly.
-
-Each report's output guide explains every table and map. Existing guides are kept
-when a newer package version adds one. If an older Windows summary has broken
-links containing `%5C`, see the
-[summary-repair instructions](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/advanced-workflows.md#sharing-and-opening-reports).
+Zip the entire **Share this folder** directory. The recipient should extract the ZIP before opening the HTML so the figures, tables and viewer load together. The two CSVs at the output root record the run index and prepared inputs. Metadata can include original file paths. [Output inventory](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/advanced-workflows.md#what-fibrtraq-writes) · [Field definitions](inst/output-guide/OUTPUTS_README.md)
 
 ## Common problems
 
-| Problem | What to check |
+| Symptom | What to check |
 |---|---|
-| GitHub installation returns HTTP 404 | Confirm repository access and an authorized GitHub credential |
-| Functions or arguments are missing after installation | Restart R; check the [loaded package revision](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/advanced-workflows.md#verify-an-installed-version) and reinstall the intended version |
-| No focal hits | Review the tractogram coordinate convention, focal mask and selected mapping |
-| Automatic `.trk` mapping stops because its best candidate flips an axis | Verify the tractogram-to-mask alignment independently, then explicitly set `track_space` and `axis_flip`; a higher ROI-overlap score does not prove the orientation is correct |
-| A `.tck` run rejects geometry or coordinate settings | Use `track_space = "auto"` or `"world"` without extra flips, and resolve missing units or invalid/conflicting NIfTI transforms at their source; see [TCK requirements](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/advanced-workflows.md#mrtrix-tck-inputs) |
-| Images have the same dimensions but are rejected | Check their NIfTI affines with `ftq_mask_grid_report()` |
-| A 4-D image is rejected | Supply a b-value for every image volume |
-| Existing-output error | Choose a new directory or deliberately set `overwrite = TRUE` |
-| A Windows run stops because an output path is too long | Choose a shorter output directory and concise subject/region labels. The preflight error identifies the path that exceeds the supported length; see [Windows output paths](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/advanced-workflows.md#windows-output-paths) |
-| A Windows report opens but a figure or download does not | Move the complete output folder to a short location such as `C:/FibrTraQ/`. Some Windows applications retain a [260-character full-path limit](https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation), even when R created the file successfully. Keep the report folder and its contents together |
-| A report or viewer fails after the analysis completes | Open the saved run index: completed scientific files remain available and the failed stage is recorded |
-| Anatomical QC is unavailable | Supply a trusted same-grid endpoint context mask; image-bound coverage alone is not anatomical evidence |
-| Streamlines appear outside anatomy | Review complete paths, coordinate mapping and the input tractography; the viewer does not clip paths to a mask |
+| Command missing in R | Restart R and check the loaded version and source revision with `packageDescription("FibrTraQ")`. |
+| `.trk` alignment would require flipping an axis | Verify the coordinate convention and alignment independently before explicitly setting `track_space` and `axis_flip`. |
+| Input grids disagree or focal hits are absent | Check subject identity, mask content, voxel dimensions and NIfTI affines. A 4-D reference also requires one b-value per volume. |
+| File or report fails to open on Windows | Extract the complete folder into a short location such as `C:/FibrTraQ/run01`. |
+| Anatomical endpoint QC is unavailable | Supply trusted, same-grid binary endpoint-context masks to assess anatomical containment. |
 
-For argument details, see `?ftq_run_files`, `?ftq_run_regional_study` or
-`help(package = "FibrTraQ")`. For support, open a
-[GitHub issue](https://github.com/castrattonDSU/FibrTraQ/issues) with your package
-version, operating system, exact error and a minimal example.
+For the complete arguments, use `?fibrtraq_single` or `?fibrtraq_study`. For support, include the package version, operating system, exact error and a minimal example. [GitHub issues](https://github.com/castrattonDSU/FibrTraQ/issues)
 
 ## Validation, citation and license
 
-The bundled synthetic dataset checks that the software behaves reproducibly.
-Unit and integration tests cover counting, coordinate mapping, file reading,
-endpoint classes and agreement between the R and C++ code. GitHub Actions runs
-package checks on Windows, macOS and Linux. Completed and outstanding validation
-is recorded in [VALIDATION.md](https://github.com/castrattonDSU/FibrTraQ/blob/main/VALIDATION.md);
-this is separate from validation in real datasets.
+The bundled fixture and automated tests check coordinate mapping, counting, format handling and agreement between the R and C++ implementations. Each research dataset requires independent verification of spatial alignment and tractography quality. [Validation record](https://github.com/castrattonDSU/FibrTraQ/blob/main/VALIDATION.md)
 
-Cite FibrTraQ using `citation("FibrTraQ")` or [CITATION.cff](https://github.com/castrattonDSU/FibrTraQ/blob/main/CITATION.cff).
-The associated manuscript is in preparation.
+Cite the package with `citation("FibrTraQ")`. [Citation](https://github.com/castrattonDSU/FibrTraQ/blob/main/CITATION.cff)
 
-FibrTraQ and its synthetic dataset are licensed under the
-[GNU General Public License, version 2 or later](https://github.com/castrattonDSU/FibrTraQ/blob/main/LICENSE.md).
-Dependencies keep their own licenses. Earlier releases distributed under MIT,
-including `v0.3.0-rc2`, remain under MIT.
-See [CONTRIBUTING.md](https://github.com/castrattonDSU/FibrTraQ/blob/main/CONTRIBUTING.md) and [SUPPORT.md](https://github.com/castrattonDSU/FibrTraQ/blob/main/SUPPORT.md) for
-contributor and support guidance.
+FibrTraQ and its bundled synthetic data are licensed under the GNU General Public License, version 2 or later. Earlier releases distributed under MIT retain their original license, including `v0.3.0-rc2`. Dependencies keep their own licenses. [License](https://github.com/castrattonDSU/FibrTraQ/blob/main/LICENSE.md) · [Contributing](https://github.com/castrattonDSU/FibrTraQ/blob/main/CONTRIBUTING.md) · [Support](https://github.com/castrattonDSU/FibrTraQ/blob/main/SUPPORT.md)

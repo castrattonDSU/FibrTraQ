@@ -1,6 +1,6 @@
 "use strict";
-// Runs only on a native Windows runner. This is browser acceptance evidence,
-// not anatomical validation or a substitute for inspecting the screenshots.
+// Windows is required for acceptance. An explicit --local-smoke run exercises
+// the same browser interactions for development on the local operating system.
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -10,6 +10,8 @@ const {pathToFileURL, fileURLToPath} = require("node:url");
 const {chromium} = require("playwright");
 
 assert(process.argv[2], "Supply browser-fixture.json from generate-fixture.R");
+const localSmoke = process.argv[3] === "--local-smoke";
+assert(process.argv.length === 3 || (process.argv.length === 4 && localSmoke));
 const manifestPath = path.resolve(process.argv[2]);
 const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
 const root = fs.realpathSync(manifest.relocated_root);
@@ -24,26 +26,27 @@ const result = {
   fixture: manifest.fixture,
   path_mode: manifest.path_mode,
   checks: [], pages: [], downloads: [], screenshots: [], page_errors: [], image_loading: [],
-  scope: "Synthetic reports in native Windows Chromium; manual and real-brain review remain separate."
+  scope: localSmoke ? "Local browser smoke test" : "Native Windows browser acceptance",
+  native_windows_acceptance: !localSmoke
 };
-let browser, context, page;
+let browser, context, page, viewer;
 const hash = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
 function check(value, description, details) {
   result.checks.push({description, passed: Boolean(value), ...(details === undefined ? {} : {details})});
   assert(value, description);
 }
-function localFile(url) {
+function localFile(url, bundleRoot) {
   const parsed = new URL(url);
   assert.equal(parsed.protocol, "file:", "Expected a local file URL");
   const file = fileURLToPath(parsed);
   const real = fs.realpathSync(file);
-  const relative = path.relative(root, real);
+  const relative = path.relative(bundleRoot, real);
   assert(relative && !relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative),
     `Local link must remain inside the relocated bundle: ${url}`);
   assert(fs.statSync(real).isFile(), `Local link must identify a file: ${url}`);
   return real;
 }
-const reportURL = kind => pathToFileURL(path.join(root, manifest.reports[kind])).href;
+const singleURL = pathToFileURL(path.join(root, manifest.report)).href;
 async function settled() {
   await page.evaluate(async () => {
     if (document.fonts) await document.fonts.ready;
@@ -131,9 +134,70 @@ async function observeFileClick(link, targetURL, allowImageNavigation) {
   if (outcome.error) throw outcome.error;
   return outcome;
 }
+
+async function inspectResultsFirst(bundleRoot, run, isKnownExample) {
+  const viewport = page.viewportSize();
+  await page.setViewportSize({width: 1280, height: 800});
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await settled();
+  const results = page.locator("#ftq-primary");
+  const table = results.getByRole("table").filter({
+    has: page.getByRole("columnheader", {name: "Destination", exact: true})
+  });
+  const label = `${run.subject} / ${run.focal_region}`;
+  const sharing = await page.getByRole("contentinfo").innerText();
+  check(/entire output folder/i.test(sharing) && sharing.includes("fibrtraq-run-index.csv") &&
+    /extract/i.test(sharing), `The report identifies the complete folder to zip and extract: ${label}`);
+  check(await table.count() === 1, `One RSC table for ${label}`);
+  const bounds = await table.boundingBox();
+  check(bounds && bounds.y >= 0 && bounds.y + bounds.height <= 800,
+    `All synthetic RSC rows are visible on a laptop's first screen: ${label}`, bounds);
+  await screenshot(`first-screen-${run.subject}-${run.focal_region}`);
+  const heatmaps = results.getByRole("heading", {name: /density heatmaps/i});
+  const heatmapBounds = await heatmaps.boundingBox();
+  check(heatmapBounds && heatmapBounds.y >= bounds.y + bounds.height,
+    `Density heatmaps follow the RSC table: ${label}`);
+  const local = table.getByRole("row").filter({has: page.getByRole("cell", {name: "local", exact: true})});
+  check(await local.count() === 1 && await local.locator("a").count() === 0,
+    `Local classification is distinct from the target map downloads: ${label}`);
+  check(await table.locator("a").count() === run.targets.length,
+    `Every named destination has one map link: ${label}`);
+  for (const target of run.targets) {
+    const row = table.getByRole("row").filter({
+      has: page.getByRole("link", {name: target, exact: true})
+    });
+    const link = row.getByRole("link", {name: target, exact: true});
+    check(await link.count() === 1, `Reader can locate the ${target} map from its RSC row: ${label}`);
+    if (isKnownExample) {
+      const values = (await row.getByRole("cell").allTextContents()).map(text => text.trim());
+      const uniqueCount = {cortex: 6, brainstem: 4}[target];
+      check(+values[1] === uniqueCount && +values[2] === 2 && +values[3] === 100,
+        `Known example row shows unique streamlines, focal coverage and RSC for ${target}`, values);
+    }
+    const url = await link.evaluate(element => element.href);
+    const file = localFile(url, bundleRoot);
+    check(path.dirname(file) === path.join(bundleRoot, run.subject, run.focal_region, "maps") &&
+      path.basename(file).endsWith(`_per-voxel-hits_target-${target}.nii.gz`),
+      `RSC destination links to its own run's count map: ${label} / ${target}`);
+    const {download} = await observeFileClick(link, url, false);
+    const checksum = hash(fs.readFileSync(file));
+    check(await download.failure() === null && hash(fs.readFileSync(await download.path())) === checksum,
+      `Downloaded destination NIfTI matches the relocated file: ${label} / ${target}`);
+    result.downloads.push({extension: "nii.gz", behavior: "download", target: target, run: label,
+      filename: download.suggestedFilename(), target_url: url, sha256: checksum});
+  }
+  await page.setViewportSize(viewport);
+}
 async function canvasPixels() {
-  return page.locator("#scene").evaluate(canvas => {
-    const pixels = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
+  return viewer.locator("#scene").evaluate(canvas => {
+    // Repeated reads on the live canvas can make Chromium switch rasterizers
+    // and change antialiasing even when the scene is identical. Read a copy.
+    const snapshot = document.createElement("canvas");
+    snapshot.width = canvas.width;
+    snapshot.height = canvas.height;
+    const context = snapshot.getContext("2d", {willReadFrequently: true});
+    context.drawImage(canvas, 0, 0);
+    const pixels = context.getImageData(0, 0, snapshot.width, snapshot.height).data;
     let centralPainted = 0, centralFingerprint = 2166136261;
     const centralColors = new Set();
     for (let y = Math.floor(canvas.height * .2); y < canvas.height * .8; y++) {
@@ -149,13 +213,13 @@ async function canvasPixels() {
       }
     }
     return {width: canvas.width, height: canvas.height, centralPainted,
-      centralColors: centralColors.size, centralFingerprint, image: canvas.toDataURL("image/png")};
+      centralColors: centralColors.size, centralFingerprint, image: snapshot.toDataURL("image/png")};
   });
 }
 async function projectedSceneBounds() {
   // Inspect the coordinates actually projected by the generated viewer,
   // independently of whether its canvas happens to contain some painted pixels.
-  return page.evaluate(() => {
+  return viewer.evaluate(() => {
     const points = [...data.brain, ...data.focal];
     for (const target of data.targets) {
       points.push(target.point, ...(target.boundary || []));
@@ -182,8 +246,10 @@ function bundleFilePaths(directory) {
 
 (async () => {
   try {
-    check(process.platform === "win32", "Acceptance browser runs on native Windows");
-    check(manifest.os === "Windows", "Synthetic reports were generated on Windows");
+    if (!localSmoke) {
+      check(process.platform === "win32", "Acceptance browser runs on native Windows");
+      check(manifest.os === "Windows", "Synthetic reports were generated on Windows");
+    }
     check(manifest.copy_checksums_identical && manifest.original_outputs_preserved,
       "Relocated bundle preserves the generated original and identical file bytes");
     check(manifest.scientific_tables_passed === 7 && manifest.declared_values_passed === 18,
@@ -240,7 +306,8 @@ function bundleFilePaths(directory) {
         sentinelMD5 === rejected.existing_output_sentinel_md5 && rejected.baseline_outputs_preserved,
       "Rejected workflow preserves pre-existing outputs and sentinel bytes");
     }
-    browser = await chromium.launch({headless: true});
+    browser = await chromium.launch({headless: true,
+      executablePath: localSmoke ? process.env.FTQ_LOCAL_CHROMIUM : undefined});
     result.browser_version = browser.version();
     result.playwright_version = require("playwright/package.json").version;
     context = await browser.newContext({viewport: {width: 1440, height: 1000},
@@ -251,83 +318,73 @@ function bundleFilePaths(directory) {
     // Reports are self-contained. Do not contact external sites during review.
     await context.route(/^https?:/, route => route.abort());
 
-    const localLinks = [];
-    const ids = new Map();
-    for (const [i, relative] of manifest.html_files.entries()) {
-      const url = pathToFileURL(path.join(root, relative)).href;
-      await open(url);
-      await exposeReportImages(relative);
+    // Check what readers can actually see after choosing a run. Assets must
+    // resolve within this relocated bundle, not the still-existing original.
+    async function inspectRun(bundleRoot, label, expectedRun) {
+      await exposeReportImages(label);
       const content = await page.evaluate(() => ({
         title: document.title,
-        ids: [...document.querySelectorAll("[id]")].map(element => element.id),
-        names: [...document.querySelectorAll("a[name]")].map(element => element.name),
-        links: [...document.querySelectorAll("a[href]")].map(element => ({raw: element.getAttribute("href"), url: element.href})),
-        images: [...document.images].map(element => ({url: element.src,
-          loaded: element.complete && element.naturalWidth > 0 && element.naturalHeight > 0}))
+        identifiers: [...document.querySelectorAll("[id], a[name]")].flatMap(e => [e.id, e.name].filter(Boolean)),
+        links: [...document.querySelectorAll("a[href]")].map(e => ({raw: e.getAttribute("href"), url: e.href})),
+        images: [...document.images].map(e => ({url: e.src, loaded: e.complete && e.naturalWidth > 0 && e.naturalHeight > 0}))
       }));
-      check(Boolean(content.title.trim()), `HTML title is present: ${relative}`);
-      check(content.images.every(image => image.loaded), `Every report image loaded: ${relative}`,
-        content.images.filter(image => !image.loaded));
-      ids.set(url, new Set([...content.ids, ...content.names]));
+      check(Boolean(content.title.trim()), `HTML title is present: ${label}`);
+      check(content.images.length > 0 && content.images.every(i => i.loaded), `All images load: ${label}`);
+      const shown = [];
+      for (const img of content.images) {
+        if (new URL(img.url).protocol === "file:") shown.push(localFile(img.url, bundleRoot));
+      }
+      if (expectedRun) {
+        const dir = path.join(bundleRoot, expectedRun.subject, expectedRun.focal_region, "figures");
+        check(shown.length > 0 && shown.every(name => path.dirname(name) === dir),
+          `Images correspond to selected subject and region: ${label}`);
+      }
+      const linkFiles = [];
       for (const link of content.links) {
-        check(!link.raw.includes("\\"), `HTML link uses URL separators: ${relative}`);
-        if (new URL(link.url).protocol === "file:") {
-          localFile(link.url);
-          localLinks.push({source: relative, url: link.url});
+        check(!link.raw.includes("\\"), `HTML link uses URL separators: ${label}`);
+        const target = new URL(link.url);
+        if (target.protocol !== "file:") continue;
+        const dest = localFile(link.url, bundleRoot);
+        linkFiles.push(dest);
+        if (target.hash && /[.]html$/i.test(target.pathname)) {
+          check(content.identifiers.includes(decodeURIComponent(target.hash.slice(1))),
+            `Local HTML fragment resolves: ${label} ${target.hash}`);
         }
       }
-      for (const image of content.images) {
-        if (new URL(image.url).protocol === "file:") localFile(image.url);
+      if (expectedRun) {
+        const here = path.join(bundleRoot, expectedRun.subject, expectedRun.focal_region, "tables");
+        check(linkFiles.some(name => path.dirname(name) === here && name.endsWith("_per-voxel-hits.csv")),
+          `Scientific CSV available for selected run: ${label}`);
       }
-      result.pages.push({relative_path: relative, image_count: content.images.length,
-        local_link_count: content.links.filter(link => new URL(link.url).protocol === "file:").length});
-      // Retain a viewport for long guides; the four primary views also get
-      // complete screenshots below. Existence alone is not visual approval.
-      await screenshot(`page-${String(i + 1).padStart(2, "0")}`);
-      if (relative === manifest.reports.results) await screenshot("results-expanded", true);
+      check(linkFiles.length > 0, `Report includes working local links: ${label}`);
+      result.local_references_checked = (result.local_references_checked || 0) + linkFiles.length;
+      result.pages.push({view: label, image_count: shown.length, local_link_count: linkFiles.length});
     }
-    for (const link of localLinks) {
-      const target = new URL(link.url);
-      const fragment = decodeURIComponent(target.hash.slice(1));
-      target.hash = "";
-      if (fragment && /[.]html$/i.test(target.pathname)) {
-        check(ids.has(target.href) && ids.get(target.href).has(fragment),
-          `Local HTML fragment resolves: ${link.source} -> ${fragment}`);
-      }
-    }
-    result.local_references_checked = localLinks.length;
-    check(localLinks.length > 0, "Report bundle contains working local navigation");
-
-    await open(reportURL("index"));
-    await screenshot("index", true);
-    await page.getByRole("link", {name: "Results", exact: true}).click();
-    await page.waitForURL(reportURL("results"));
-    await settled();
-    check(await page.locator("img").count() > 0, "Results report contains rendered figures");
-    await screenshot("results", true);
-    for (const kind of ["target", "viewer"]) {
-      await open(reportURL("index"));
-      const sections = page.locator("details");
-      for (let i = 0; i < await sections.count(); i++) {
-        if (!await sections.nth(i).evaluate(element => element.open)) {
-          await sections.nth(i).locator("summary").first().click();
-        }
-      }
-      const links = page.locator("a[href]");
-      const position = await links.evaluateAll((elements, wanted) => elements.findIndex(element => element.href === wanted), reportURL(kind));
-      check(position >= 0, `Index provides the ${kind} report link`);
-      await links.nth(position).click();
-      await page.waitForURL(reportURL(kind));
+    async function openViewer() {
+      await page.locator("#ftq-open-viewer").click();
+      const iframe = await page.locator("#ftq-viewer").elementHandle();
+      viewer = await iframe.contentFrame();
+      assert(viewer, "Viewer frame is attached");
+      await viewer.locator("#scene").waitFor({state:"visible"});
+      await viewer.locator("#scene").scrollIntoViewIfNeeded();
       await settled();
-      await screenshot(kind, true);
     }
-
-    await open(reportURL("target"));
+    check(manifest.html_files.length === 1 && manifest.html_files[0] === manifest.report,
+      "Single run writes one HTML document in its focal-region folder");
+    await open(singleURL);
+    check(await page.locator("#ftq-viewer").count() === 0, "Viewer initializes on request");
+    await screenshot("results", false);
+    await inspectResultsFirst(root, manifest.single_run, true);
+    await inspectRun(root, "single", manifest.single_run);
+    check(await page.locator("#ftq-primary img").count() > 0 &&
+      await page.locator("#ftq-targets img").count() === 5,
+    "Results and all five target figures are accessible on the same page");
+    await screenshot("results-expanded", true);
     for (const extension of ["csv", "png"]) {
-      const link = page.locator(`a[download][href$=".${extension}"]`).first();
+      const link = page.locator(`#ftq-targets a[download][href$=".${extension}"]`).first();
       check(await link.count() === 1, `Target report offers a ${extension.toUpperCase()} download`);
       const url = await link.evaluate(element => element.href);
-      const expected = fs.readFileSync(localFile(url));
+      const expected = fs.readFileSync(localFile(url, root));
       const observed = await observeFileClick(link, url, extension === "png");
       if (observed.behavior === "download") {
         const download = observed.download;
@@ -360,13 +417,14 @@ function bundleFilePaths(directory) {
       }
     }
 
-    await open(reportURL("viewer"));
+    await open(singleURL);
+    await openViewer();
     const initial = await canvasPixels();
     check(initial.width > 0 && initial.height > 0 && initial.centralPainted > 20 && initial.centralColors > 8,
       "3-D canvas paints nonuniform scene content away from the compass",
       {central_painted_pixels: initial.centralPainted, central_colors: initial.centralColors});
     await screenshot("viewer-initial");
-    const bounds = await page.locator("#scene").boundingBox();
+    const bounds = await viewer.locator("#scene").boundingBox();
     const x = bounds.x + bounds.width * .55, y = bounds.y + bounds.height * .45;
     await page.mouse.move(x, y);
     await page.mouse.down();
@@ -387,13 +445,13 @@ function bundleFilePaths(directory) {
       central_painted_pixels: initial.centralPainted, central_colors: initial.centralColors,
       initial_fingerprint: initial.centralFingerprint, rotated_fingerprint: rotated.centralFingerprint,
       zoomed_fingerprint: zoomed.centralFingerprint};
-    await page.locator("#reset").click();
+    await viewer.locator("#reset").click();
     await settled();
     check((await canvasPixels()).image === initial.image, "Reset restores the initial rendered scene exactly");
     await screenshot("viewer-reset");
 
     // Drag near the right edge to exercise trackball roll with real pointer events.
-    const edge = await page.locator("#scene").boundingBox();
+    const edge = await viewer.locator("#scene").boundingBox();
     await page.mouse.move(edge.x + edge.width - 25, edge.y + edge.height * .45);
     await page.mouse.down();
     await page.mouse.move(edge.x + edge.width - 25, edge.y + edge.height * .65, {steps: 12});
@@ -402,45 +460,45 @@ function bundleFilePaths(directory) {
     check((await canvasPixels()).centralFingerprint !== initial.centralFingerprint,
       "Edge dragging rolls the rendered scene");
     await screenshot("viewer-rolled");
-    await page.locator("#reset").click();
+    await viewer.locator("#reset").click();
     await settled();
     check((await canvasPixels()).image === initial.image, "Reset restores the scene after edge roll");
 
     // Hide endpoint markers so they cannot completely occlude the tiny
     // synthetic focal boundary while testing that layer's visibility control.
-    await page.locator("#toggleEndpoints").click();
+    await viewer.locator("#toggleEndpoints").click();
     await settled();
     const layerBaseline = await canvasPixels();
-    await page.locator("#toggleFocal").click();
+    await viewer.locator("#toggleFocal").click();
     await settled();
-    check(await page.locator("#toggleFocal").getAttribute("aria-pressed") === "false",
+    check(await viewer.locator("#toggleFocal").getAttribute("aria-pressed") === "false",
       "Focal-boundary toggle exposes its disabled state");
     check((await canvasPixels()).centralFingerprint !== layerBaseline.centralFingerprint,
       "Focal-boundary toggle changes central rendered pixels");
-    await page.locator("#toggleFocal").click();
-    await page.locator("#toggleEndpoints").click();
-    await page.locator("#advancedControls > summary").click();
-    await page.locator('.segment[data-mode="focal"]').click();
+    await viewer.locator("#toggleFocal").click();
+    await viewer.locator("#toggleEndpoints").click();
+    await viewer.locator("#advancedControls > summary").click();
+    await viewer.locator('.segment[data-mode="focal"]').click();
     await settled();
-    check(await page.locator('.segment[data-mode="focal"]').getAttribute("aria-pressed") === "true",
+    check(await viewer.locator('.segment[data-mode="focal"]').getAttribute("aria-pressed") === "true",
       "Advanced path display selects the focal segment");
     check((await canvasPixels()).centralFingerprint !== initial.centralFingerprint,
       "Focal-segment selection changes the rendered paths");
-    await page.locator('.segment[data-mode="points"]').click();
-    await page.locator('.endpoint-mode[data-endpoint-mode="Dilated1"]').click();
+    await viewer.locator('.segment[data-mode="points"]').click();
+    await viewer.locator('.endpoint-mode[data-endpoint-mode="Dilated1"]').click();
     await settled();
-    check(await page.locator('.endpoint-mode[data-endpoint-mode="Dilated1"]').getAttribute("aria-pressed") === "true",
+    check(await viewer.locator('.endpoint-mode[data-endpoint-mode="Dilated1"]').getAttribute("aria-pressed") === "true",
       "Endpoint sensitivity control changes its selected state");
-    check((await page.locator("#endpointStatus").innerText()).includes("1-voxel"),
+    check((await viewer.locator("#endpointStatus").innerText()).includes("1-voxel"),
       "Endpoint status reports the selected sensitivity mode");
     await screenshot("viewer-advanced");
-    await page.locator('.endpoint-mode[data-endpoint-mode="Exact"]').click();
-    await page.locator("#advancedControls > summary").click();
+    await viewer.locator('.endpoint-mode[data-endpoint-mode="Exact"]').click();
+    await viewer.locator("#advancedControls > summary").click();
     await page.setViewportSize({width: 500, height: 900});
     await settled();
-    await page.locator("#reset").click();
+    await viewer.locator("#reset").click();
     await settled();
-    check(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 2),
+    check(await viewer.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 2),
       "Narrow viewer fits the viewport without horizontal overflow");
     const narrow = await canvasPixels();
     check(narrow.centralPainted > 20 && narrow.centralColors > 8, "Narrow viewer still paints nonuniform scene content");
@@ -453,6 +511,38 @@ function bundleFilePaths(directory) {
       narrowBounds.max_y <= narrowBounds.canvas_height - markerPadding,
     "After reset, the complete projected scene fits inside the narrow canvas with marker padding", narrowBounds);
     await screenshot("viewer-narrow", true);
+    const cohortRoot = fs.realpathSync(manifest.cohort.relocated_root);
+    const cohortURL = pathToFileURL(path.join(cohortRoot, manifest.cohort.report)).href;
+    const cohortPaths = bundleFilePaths(cohortRoot);
+    check(cohortPaths.filter(p => /[.]html?$/i.test(p)).length === 1 && path.dirname(manifest.cohort.report) === ".",
+      "Cohort uses one HTML report at the study root");
+    if (manifest.path_mode === "near-limit") {
+      check(Math.max(...cohortPaths.map(p => p.length)) === 259, "Relocated cohort reaches the Windows path boundary");
+    }
+    await page.setViewportSize({width: 1440, height: 1000});
+    await open(cohortURL);
+    const runs = manifest.cohort.runs;
+    check(await page.locator("#ftq-run option").count() === runs.length && runs.length === 4,
+      "Cohort offers all four subject/focal combinations");
+    for (const [i, run] of runs.entries()) {
+      const label = `${run.subject} / ${run.focal_region}`;
+      await page.locator("#ftq-run").selectOption(String(i));
+      const title = await page.locator("#ftq-current-run").innerText();
+      check(title.includes(run.subject) && title.includes(run.focal_region), `Selected run heading: ${label}`);
+      const denominator = new RegExp(`^Total number of fNode voxels: ${run.focal_voxels}\\.(?: |$)`);
+      check(await page.locator("#ftq-primary").getByText(denominator).isVisible(),
+        `RSC denominator matches the selected input mask: ${label}`);
+      check(await page.locator("#ftq-viewer").count() === 0, `Selection clears previous viewer: ${label}`);
+      await inspectResultsFirst(cohortRoot, run, false);
+      await inspectRun(cohortRoot, label, run);
+      await openViewer();
+      const scene = await canvasPixels();
+      check(scene.centralPainted > 20 && scene.centralColors > 8, `Selected viewer draws a new scene: ${label}`);
+      const description = await viewer.evaluate(() => data.metadata.title);
+      check(description.includes(run.subject) && description.includes(run.focal_region), `Viewer uses selected run's scene: ${label}`, description);
+      check(page.url().split("#")[0] === cohortURL, `Subject switching stays inside the cohort document: ${label}`);
+      await screenshot(`cohort-viewer-${i + 1}`);
+    }
     check(result.page_errors.length === 0, "No report or viewer JavaScript errors", result.page_errors);
     result.passed = true;
   } catch (error) {

@@ -141,7 +141,7 @@
 #'
 #' @examples
 #' # res <- FibrTraQ(fnode, NULL, cnodes, names(cnodes), trk)
-#' @export
+#' @noRd
 FibrTraQ <- function(fNode,
                      localROI = NULL,
                      cNode_list,
@@ -688,7 +688,7 @@ FibrTraQ <- function(fNode,
       "Analysis stopped before streamline counting. ",
       "Sampled focal-mask overlap cannot establish anatomical alignment. ",
       "Verify the tractogram and mask orientation against trusted geometry ",
-      "or anatomy, then rerun FibrTraQ() or ftq_run_files() with track_space ",
+      "or anatomy, then rerun fibrtraq_single() or fibrtraq_study() with track_space ",
       "and axis_flip explicitly set to the validated mapping. ",
       "For file workflows, use a new output directory.",
       call. = FALSE

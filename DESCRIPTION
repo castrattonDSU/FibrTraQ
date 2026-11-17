@@ -1,7 +1,7 @@
 Package: FibrTraQ
 Type: Package
 Title: Voxel-Resolved Focal-ROI Target Profiling of Diffusion Tractograms
-Version: 0.3.5
+Version: 0.3.5.9002
 Authors@R: c(
     person("Chase", "Stratton", , "cstratton@desu.edu", role = c("aut", "cre")),
     person("Nicholas", "Cottam", role = "aut")
@@ -11,9 +11,10 @@ Description: Computes voxel-resolved association profiles between a focal brain
     region and target regions from diffusion magnetic resonance imaging
     tractography. Reads 'TrackVis' ('.trk') and 'MRtrix' ('.tck') tractograms
     with 'NIfTI' masks and checks spatial compatibility before counting.
+    Runs a single subject or a study from multiple subjects' files.
     Supports full-streamline and endpoint-based target assignment, focal-voxel
     coverage summaries, endpoint quality control, and export of tables,
-    density maps, self-contained reports, and an interactive three-dimensional
+    density maps, and portable HTML reports with an interactive three-dimensional
     viewer. Counts are unweighted; interpretation requires independently
     verified spatial alignment and biologically plausible tractography.
 License: GPL (>= 2)
@@ -28,9 +29,6 @@ Imports:
     Rcpp
 LinkingTo: Rcpp
 Suggests:
-    ggplot2,
-    ggrepel,
-    pkgload,
     testthat (>= 3.2.0)
 URL: https://github.com/castrattonDSU/FibrTraQ
 BugReports: https://github.com/castrattonDSU/FibrTraQ/issues

@@ -8,8 +8,7 @@ For a useful report, include:
 
 - FibrTraQ version or commit SHA;
 - operating system and R version;
-- the command or script that failed;
-- the manifest, if using `ftq_run()`;
+- the `fibrtraq_single()` or `fibrtraq_study()` call that failed, with sensitive paths removed;
 - the exact error message;
 - whether the issue appears with a small test tractogram or only with a large dataset.
 

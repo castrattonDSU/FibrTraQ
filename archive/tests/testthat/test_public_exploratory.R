@@ -1,0 +1,22 @@
+test_that("standalone exploratory script forwards explicit method radius and slices", {
+  skip_if_not_installed("RNifti")
+  root <- tempfile("exploratory-script-")
+  dir.create(root)
+  input <- file.path(root, "result.csv")
+  template <- file.path(root, "template.nii.gz")
+  utils::write.csv(public_exploratory_fixture(), input, row.names = FALSE)
+  RNifti::writeNifti(array(0, c(3, 3, 3)), template)
+  script <- file.path(archive_root, "scripts", "fibrtraq-exploratory-report.R")
+  expect_true(nzchar(script))
+  env <- new.env(parent = globalenv())
+  args <- c(input, template, file.path(root, "report"), "--assignment-mode", "local_search",
+    "--search-radius-mm", "3.25", "--slices", "1,3", "--prefix", "S1c")
+  env$commandArgs <- function(trailingOnly = FALSE) args
+  invisible(utils::capture.output(sys.source(script, envir = env)))
+  expect_true(file.exists(env$report$html))
+  expect_identical(env$report$summary$provenance$target_intersection_mode, "local_search")
+  expect_identical(env$report$summary$provenance$local_search_radius_mm, 3.25)
+  expect_equal(env$report_slices, c(1, 3))
+  args <- c(input, template, file.path(root, "invalid"), "--search-radius-mm", "NaN")
+  expect_error(sys.source(script, envir = env), "finite, positive number")
+})

@@ -1,5 +1,7 @@
 citHeader("To cite FibrTraQ in publications, cite the software release and the associated manuscript when available.")
 
+version_note <- paste("R package version", meta$Version)
+
 bibentry(
   bibtype = "Manual",
   title = "FibrTraQ: Voxel-Resolved Focal-ROI Target Profiling of Diffusion Tractograms",
@@ -8,12 +10,12 @@ bibentry(
     person("Nicholas", "Cottam")
   ),
   year = "2026",
-  note = "R package version 0.3.5",
+  note = version_note,
   url = "https://github.com/castrattonDSU/FibrTraQ",
   textVersion = paste(
     "Stratton C, Cottam N (2026).",
     "FibrTraQ: Voxel-Resolved Focal-ROI Target Profiling of Diffusion Tractograms.",
-    "R package version 0.3.5.",
+    paste0(version_note, "."),
     "https://github.com/castrattonDSU/FibrTraQ"
   )
 )

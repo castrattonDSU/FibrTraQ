@@ -67,7 +67,7 @@
 #'
 #' @seealso \code{\link{FibrTraQ}}, \code{\link{cNode_tracks}},
 #'   \code{\link{rsc_summary}}
-#' @export
+#' @noRd
 summary_connectivity <- function(fibr_table,
                                  percent = FALSE,
                                  include_legacy_tracks = TRUE,
@@ -98,7 +98,7 @@ summary_connectivity <- function(fibr_table,
         "`tracks` in summary_connectivity() is deprecated and is an alias for ",
         "`target_associations`; it is not a unique target-positive streamline count. ",
         "Use `target_associations` or `focal_voxel_streamline_target_associations`, ",
-        "and use ftq_target_summary_tables() for unique ROI-level streamline counts.",
+        "and consult the run's RSC summary for unique target-positive streamline counts.",
         call. = FALSE
       )
     }

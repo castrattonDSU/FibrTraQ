@@ -20,9 +20,9 @@
 #' two fingers to zoom. Reset Orientation restores the initial view and zoom.
 #'
 #' @param manifest Manifest path/list, or a completed object returned by
-#'   [ftq_run()].
+#'   `ftq_run()`.
 #' @param output_html Optional output HTML path. If omitted, the viewer is
-#'   written under the run's report figures directory.
+#'   written under the run's figures directory.
 #' @param target_labels Optional subset of manifest target labels to sample.
 #' @param sample_per_target Number of streamlines to sample per target. Supply
 #'   a single value for all targets, or a named integer vector with per-target
@@ -39,9 +39,10 @@
 #'   density image path used when no anatomical background is available.
 #' @param overwrite Whether to replace an existing viewer file.
 #' @param open Whether to open the viewer after writing.
+#' @param .scene_file Internal path for the scene displayed in a unified report.
 #'
 #' @return A list with viewer path and sampling summary.
-#' @export
+#' @noRd
 ftq_interactive_qc_viewer <- function(manifest,
                                       output_html = NULL,
                                       target_labels = NULL,
@@ -53,7 +54,8 @@ ftq_interactive_qc_viewer <- function(manifest,
                                       focal_window = 3L,
                                       overwrite = FALSE,
                                       open = FALSE,
-                                      tractogram_context = NULL) {
+                                      tractogram_context = NULL,
+                                      .scene_file = NULL) {
   run_result <- NULL
   run_context <- NULL
   is_completed_run <- is.list(manifest) &&
@@ -93,21 +95,19 @@ ftq_interactive_qc_viewer <- function(manifest,
     stop("At least one target must have a positive sample quota.")
   }
 
-  if (is.null(output_html)) {
-    output_html <- file.path(
-      m$output_dir,
-      "reports",
-      m$prefix,
-      "report-figures",
-      paste0(m$prefix, "_fig_interactive-3d-qc.html")
-    )
+  if (!is.null(.scene_file) && (!is.null(output_html) || isTRUE(open))) {
+    stop("An embedded scene cannot also be opened or written as a standalone viewer.")
   }
-  output_html <- normalizePath(path.expand(output_html), mustWork = FALSE)
-  if (file.exists(output_html) && !isTRUE(overwrite)) {
-    stop("Interactive QC viewer already exists. Use overwrite = TRUE to replace: ", output_html)
+  if (is.null(.scene_file) && is.null(output_html)) {
+    output_html <- file.path(m$output_dir, "figures",
+                             paste0(m$prefix, "_fig_interactive-3d-qc.html"))
   }
-  dir.create(dirname(output_html), recursive = TRUE, showWarnings = FALSE)
-
+  destination <- if (is.null(.scene_file)) output_html else .scene_file
+  destination <- normalizePath(path.expand(destination), mustWork = FALSE)
+  if (file.exists(destination) && !isTRUE(overwrite)) {
+    stop("Interactive QC viewer already exists. Use overwrite = TRUE to replace: ", destination)
+  }
+  dir.create(dirname(destination), recursive = TRUE, showWarnings = FALSE)
   target_intersection_mode <- ftq_normalize_target_intersection_mode(
     m$target_intersection_mode
   )
@@ -539,7 +539,8 @@ ftq_interactive_qc_viewer <- function(manifest,
   colors <- stats::setNames(grDevices::hcl.colors(length(target_labels), "Dark 3"), target_labels)
 
   ftq_qc_write_html(
-    path = output_html,
+    path = destination,
+    scene_only = !is.null(.scene_file),
     streamlines = unlist(samples, recursive = FALSE),
     focal_world = focal_world,
     focal_total_count = nrow(focal$coords),
@@ -559,7 +560,7 @@ ftq_interactive_qc_viewer <- function(manifest,
     title = paste0("Interactive 3D QC: ", m$prefix)
   )
 
-  if (isTRUE(open)) ftq_qc_open_output(output_html)
+  if (isTRUE(open)) ftq_qc_open_output(destination)
   summary <- data.frame(
     target = target_labels,
     sampled_streamlines = as.integer(sample_counts[target_labels]),
@@ -576,7 +577,8 @@ ftq_interactive_qc_viewer <- function(manifest,
     summary
   )
   list(
-    html = output_html,
+    html = if (is.null(.scene_file)) destination else NULL,
+    scene_file = if (!is.null(.scene_file)) destination else NULL,
     summary = summary,
     target_labels = target_labels,
     track_space = track_space,
@@ -709,7 +711,7 @@ ftq_qc_map_track <- function(track,
     voxel <- ftq_trackvis_voxelmm_to_voxel(
       raw,
       track_voxel_size,
-      caller = "ftq_interactive_qc_viewer"
+      caller = "3D QC viewer"
     )
     world <- ftq_voxel_to_world_mm(voxel, ref_image)
   } else if (identical(track_space, "vox10")) {
@@ -1113,7 +1115,8 @@ ftq_qc_write_html <- function(path,
                               endpoint_analysis,
                               title,
                               target_intersection_mode = "full_streamline",
-                              local_search_radius_mm = 2) {
+                              local_search_radius_mm = 2,
+                              scene_only = FALSE) {
   target_intersection_mode <- ftq_normalize_target_intersection_mode(
     target_intersection_mode
   )
@@ -1310,14 +1313,16 @@ ftq_qc_write_html <- function(path,
   json <- escape_script_character(json, "&", "0026")
   json <- escape_script_character(json, "<", "003c")
   json <- escape_script_character(json, ">", "003e")
-  guide <- ftq_write_output_guide(dirname(path))
-  writeLines(ftq_qc_html_template(
-    json, guide_href = ftq_report_href(guide, dirname(path))
-  ), path)
+  content <- if (scene_only) {
+    # Each script attaches data to itself so concurrent loads from different
+    # runs cannot share or replace another run's scene.
+    paste0("document.currentScript.ftqScene = ", json, ";")
+  } else ftq_qc_html_template(json)
+  writeLines(enc2utf8(content), path, useBytes = TRUE)
   invisible(path)
 }
 
-ftq_qc_html_template <- function(json, guide_href = "OUTPUTS_README.html") {
+ftq_qc_html_template <- function(json) {
   paste0('<!doctype html>
 <html lang="en">
 <head>
@@ -1393,7 +1398,6 @@ canvas{display:block;width:100%;height:100%;cursor:grab;touch-action:none}.dragg
 <span><i class="marker-dot" style="--marker-color:#64748b"></i>Grey: other or unavailable context</span>
 </div>
 </section>
-<p class="method-context"><a href="', ftq_report_html_escape(guide_href), '">Output definitions and guide</a></p>
 <details class="viewer-details" id="viewerDetails"><summary>Sampling, methods and interpretation</summary><p id="viewerMethods"></p></details>
 </main>
 <script id="scene-data" type="application/json">', json, '</script>

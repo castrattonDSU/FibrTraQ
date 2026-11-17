@@ -41,9 +41,9 @@ independent anatomical evidence.
 | Cross-platform package checks | Continuously tested | Package installation, tests, examples, and `R CMD check` on Linux, macOS, and Windows | [GitHub Actions](https://github.com/castrattonDSU/FibrTraQ/actions/workflows/R-CMD-check.yaml) |
 | Windows report-browser acceptance | Workflow available; inspect the result and screenshots for each candidate | Native Windows Chromium opens relocated synthetic reports, checks local links and downloads, and exercises rendered 3-D controls; this is separate from real-brain anatomical review | [Browser acceptance procedure](.github/scripts/browser-acceptance/README.md) |
 | Automatic-reflection regression | Implemented and passed in the preceding development revision | An asymmetric synthetic case makes an incorrect reflection score more focal hits; the engine and file workflow must reject that unconfirmed choice before counting, while explicit mappings preserve known counts | [`test_orientation_guard.R`](tests/testthat/test_orientation_guard.R) |
-| dTOR-985 production-scale backend comparison | Reported historical local benchmark for pre-endpoint core outputs | Exact R/C++ agreement was recorded for per-voxel, RSC, and fate tables on 11,820,000 streamlines; performance characterization only, without a self-contained archived evidence bundle | [`backend-benchmark-dtor985.md`](inst/validation/backend-benchmark-dtor985.md) |
-| Native TCK public-human interoperability | Completed local development analysis | One subject, 10,000 native MRtrix streamlines; exact independent reader, R/C++, and reversed-point-order checks; inspected reports; converted-TRK boundary differences retained and accounted for | [`native-tck-evidence.md`](inst/validation/native-tck-evidence.md) |
-| Public benchmark setup assets | Available, not a completed release claim | Reusable manifests and scripts for independent external validation | [`inst/validation`](inst/validation) |
+| dTOR-985 production-scale backend comparison | Reported historical local benchmark for pre-endpoint core outputs | Exact R/C++ agreement was recorded for per-voxel, RSC, and fate tables on 11,820,000 streamlines; performance characterization only, without a self-contained archived evidence bundle | [`backend-benchmark-dtor985.md`](archive/validation/backend-benchmark-dtor985.md) |
+| Native TCK public-human interoperability | Completed local development analysis | One subject, 10,000 native MRtrix streamlines; exact independent reader, R/C++, and reversed-point-order checks; inspected reports; converted-TRK boundary differences retained and accounted for | [`native-tck-evidence.md`](archive/validation/native-tck-evidence.md) |
+| Public benchmark setup assets | Available, not a completed release claim | Reusable manifests and scripts for independent external validation | [`archive/validation`](archive/validation) |
 
 The dTOR-985 benchmark predates the additive endpoint tables. It supports
 compiled-backend equivalence and scale for the established per-voxel, RSC, and
@@ -77,14 +77,13 @@ See the linked evidence record for exact counts, provenance and reproduction.
 
 ## Reproduce The Bundled Analysis
 
-The package-owned fixture is the primary user-facing reproducibility example.
+Use the README to run the package-owned fixture with `fibrtraq_single()`. For a formal comparison against the stored results, install the matching package and run the following from the repository root.
 It contains 14 synthetic TrackVis streamlines on a 9 x 9 x 9 grid, focal and
 local masks, two targets, a reference image, and an endpoint context mask.
 
 ```r
-library(FibrTraQ)
-
-example <- ftq_run_example(
+research <- source("archive/load.R")$value
+example <- research$ftq_run_example(
   output_dir = file.path(tempdir(), "fibrtraq-known-answer"),
   overwrite = TRUE
 )
@@ -123,12 +122,11 @@ Regeneration is a maintainer action, not part of normal package use.
 A release candidate is acceptable only when all applicable gates pass:
 
 - the checksum inventory for the bundled fixture is valid;
-- `ftq_run_example()` reproduces all seven expected scientific tables exactly;
+- the archived known-answer check reproduces all seven scientific tables exactly;
 - all 18 independently declared known answers match both stored and generated
   tables;
-- standard, exploratory, and interactive 3-D reports are generated and
-  non-empty;
-- the complete automated test suite passes;
+- the single HTML report opens its results, target figures, and 3-D viewer;
+- both the installed package tests and the research archive tests pass;
 - `R CMD build` and `R CMD check` pass from the built source archive;
 - a fresh installed-package session can locate and run the bundled example;
 - reports, local downloads, and 3-D interactions are reviewed in the intended
@@ -178,10 +176,10 @@ study-specific statistical analysis.
 
 ## Extended Validation
 
-The installed [`inst/validation/README.md`](inst/validation/README.md) documents
+The installed [`archive/validation/README.md`](archive/validation/README.md) documents
 the extended validation machinery, evidence-bundle policy, acceptance criteria,
 and public benchmark setup. The accompanying
-[`public-datasets.yml`](inst/validation/public-datasets.yml) identifies whether
+[`public-datasets.yml`](archive/validation/public-datasets.yml) identifies whether
 each entry is completed evidence, a runnable template, or a registry-only
 candidate.
 

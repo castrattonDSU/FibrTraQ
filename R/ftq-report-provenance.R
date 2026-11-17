@@ -1,3 +1,17 @@
+# Current bundles keep metadata in the focal directory and CSVs under tables/.
+# Older bundles keep both together. Resolve from the CSV so moved copies work.
+ftq_result_sidecar <- function(result_csv, kind) {
+  suffix <- "_fibrtraq_per-voxel-hits[.]csv$"
+  if (!is.character(result_csv) || length(result_csv) != 1L ||
+      is.na(result_csv) || !grepl(suffix, basename(result_csv))) return(NULL)
+  folder <- dirname(result_csv)
+  folders <- if (basename(folder) == "tables") c(dirname(folder), folder) else folder
+  name <- sub(suffix, paste0("_fibrtraq_", kind, ".json"), basename(result_csv))
+  paths <- file.path(folders, name)
+  found <- paths[file.exists(paths)]
+  if (length(found)) found[[1L]] else NULL
+}
+
 # Resolve report labels from saved evidence before the ordinary manifest
 # normalizer supplies historical defaults. This reads metadata only; it never
 # imports result tables, maps, endpoint audits, or other analysis files.
@@ -23,20 +37,15 @@ ftq_report_resolve_manifest <- function(result_csv, manifest = NULL) {
   if (!is.null(explicit) && !is.list(explicit)) stop("Manifest content must be a list.")
 
   metadata <- NULL
-  metadata_path <- NULL
-  if (is.character(result_csv) && length(result_csv) == 1L &&
-      grepl("_fibrtraq_per-voxel-hits[.]csv$", result_csv)) {
-    candidate <- sub("_fibrtraq_per-voxel-hits[.]csv$", "_fibrtraq_run-metadata.json", result_csv)
-    if (file.exists(candidate)) {
-      metadata <- tryCatch(jsonlite::read_json(candidate, simplifyVector = FALSE),
-        error = function(e) stop("Cannot read companion run metadata: ", conditionMessage(e)))
-      if (!is.list(metadata)) stop("Companion run metadata must contain a JSON object.")
-      recorded_file <- scalar(metadata$files$result_csv)
-      if (!is.null(recorded_file) && !identical(
-        basename(ftq_report_normalize_path(recorded_file)), basename(result_csv)
-      )) stop("Companion run metadata names a different result CSV.")
-      metadata_path <- candidate
-    }
+  metadata_path <- ftq_result_sidecar(result_csv, "run-metadata")
+  if (!is.null(metadata_path)) {
+    metadata <- tryCatch(jsonlite::read_json(metadata_path, simplifyVector = FALSE),
+      error = function(e) stop("Cannot read companion run metadata: ", conditionMessage(e)))
+    if (!is.list(metadata)) stop("Companion run metadata must contain a JSON object.")
+    recorded_file <- scalar(metadata$files$result_csv)
+    if (!is.null(recorded_file) && !identical(
+      basename(ftq_report_normalize_path(recorded_file)), basename(result_csv)
+    )) stop("Companion run metadata names a different result CSV.")
   }
   saved <- metadata$manifest
   if (!is.null(saved) && !is.list(saved)) stop("Companion run manifest must be a JSON object.")

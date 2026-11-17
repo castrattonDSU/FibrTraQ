@@ -1,18 +1,8 @@
-public_exploratory_fixture <- function() {
-  data.frame(
-    fNode_Coords = c("1_1_1", "2_2_2", "3_3_3", "1_2_1", "2_1_2"),
-    tracks = c(4L, 2L, 0L, 1L, 1L),
-    local = c(1L, 0L, 0L, 1L, 0L),
-    leave_no_target = c(0L, 0L, 0L, 0L, 1L),
-    A = c(2L, 2L, 0L, 0L, 0L),
-    B = c(2L, 0L, 0L, 0L, 0L), none = c(0L, 0L, 1L, 0L, 0L)
-  )
-}
-
 test_that("CSV exploratory reports recover matching relocated method metadata", {
   root <- tempfile("exploratory-provenance-")
   dir.create(root)
-  input <- file.path(root, "S1c_fibrtraq_per-voxel-hits.csv")
+  dir.create(file.path(root, "tables"))
+  input <- file.path(root, "tables", "S1c_fibrtraq_per-voxel-hits.csv")
   meta <- file.path(root, "S1c_fibrtraq_run-metadata.json")
   result <- public_exploratory_fixture()
   utils::write.csv(result, input, row.names = FALSE)
@@ -87,7 +77,6 @@ test_that("target report writes only seven public artifacts with portable links"
   image <- RNifti::asNifti(array(0, c(3, 3, 3)))
   RNifti::pixdim(image) <- c(1.5, 2, 3)
   RNifti::writeNifti(image, template)
-  FibrTraQ:::ftq_write_output_guide(root)
   result <- public_exploratory_fixture()
   attr(result, "fibrtraq_target_intersection_mode") <- "full_streamline"
   attr(result, "fibrtraq_focal_assignment_mode") <- "first_intersection"
@@ -118,7 +107,7 @@ test_that("target report writes only seven public artifacts with portable links"
   expect_match(html, "FibrTraQ target report", fixed = TRUE)
   expect_false(grepl("Advanced maps|Research maps|exploratory-per-voxel.csv|exploratory-provenance.csv", html))
   expect_match(html, "<details><summary>Target association table", fixed = TRUE)
-  expect_match(html, "Output definitions and interpretation guide", fixed = TRUE)
+  expect_false(grepl("OUTPUTS_README|Output definitions and interpretation guide", html))
   expect_false(grepl(" onerror='", html, fixed = TRUE))
   expect_match(html, "%27", fixed = TRUE)
   hrefs <- regmatches(html, gregexpr("(?:href|src)='[^']+'", html, perl = TRUE))[[1L]]
@@ -184,14 +173,12 @@ test_that("exploratory categorical previews validate selected slices", {
     data.frame(), tempfile(fileext = ".png"), "test", slices = 1.5), "slice|Slice")
 })
 
-test_that("target reports reuse current guides and keep complete target information", {
+test_that("target reports leave older guides untouched and keep complete target information", {
   root <- tempfile("target-guide-")
   figures <- file.path(root, "subject", "focal", "figures")
   dir.create(figures, recursive = TRUE)
   old_guide <- file.path(root, "OUTPUTS_README.html")
   writeLines("Existing customized guide", old_guide)
-  guide <- FibrTraQ:::ftq_write_output_guide(root)
-  expect_false(identical(guide, old_guide))
   input <- file.path(dirname(figures), "test_fibrtraq_per-voxel-hits.csv")
   metadata <- file.path(dirname(figures), "test_fibrtraq_run-metadata.json")
   utils::write.csv(public_exploratory_fixture(), input, row.names = FALSE)
@@ -202,33 +189,10 @@ test_that("target reports reuse current guides and keep complete target informat
   output <- file.path(figures, "target-report.html")
   FibrTraQ:::ftq_write_exploratory_html_report(output, summary, list())
   html <- paste(readLines(output), collapse = "\n")
-  expect_match(html, basename(guide), fixed = TRUE)
+  expect_false(grepl(basename(old_guide), html, fixed = TRUE))
   expect_match(html, "../test_fibrtraq_run-metadata.json", fixed = TRUE)
   expect_match(html, "Target_26", fixed = TRUE)
   expect_false(grepl("download contains every target|Ranked preview", html))
   expect_identical(list.files(figures), "target-report.html")
   expect_identical(readLines(old_guide), "Existing customized guide")
-})
-
-test_that("standalone exploratory script forwards explicit method radius and slices", {
-  skip_if_not_installed("RNifti")
-  root <- tempfile("exploratory-script-")
-  dir.create(root)
-  input <- file.path(root, "result.csv")
-  template <- file.path(root, "template.nii.gz")
-  utils::write.csv(public_exploratory_fixture(), input, row.names = FALSE)
-  RNifti::writeNifti(array(0, c(3, 3, 3)), template)
-  script <- system.file("scripts", "fibrtraq-exploratory-report.R", package = "FibrTraQ")
-  expect_true(nzchar(script))
-  env <- new.env(parent = globalenv())
-  args <- c(input, template, file.path(root, "report"), "--assignment-mode", "local_search",
-    "--search-radius-mm", "3.25", "--slices", "1,3", "--prefix", "S1c")
-  env$commandArgs <- function(trailingOnly = FALSE) args
-  invisible(utils::capture.output(sys.source(script, envir = env)))
-  expect_true(file.exists(env$report$html))
-  expect_identical(env$report$summary$provenance$target_intersection_mode, "local_search")
-  expect_identical(env$report$summary$provenance$local_search_radius_mm, 3.25)
-  expect_equal(env$report_slices, c(1, 3))
-  args <- c(input, template, file.path(root, "invalid"), "--search-radius-mm", "NaN")
-  expect_error(sys.source(script, envir = env), "finite, positive number")
 })

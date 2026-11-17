@@ -32,6 +32,7 @@
 ^.*_Completed$
 ^deliverables$
 ^docs$
+^archive$
 
 # Local study audits are retained in the working tree but are not package
 # interfaces or distributable validation evidence.

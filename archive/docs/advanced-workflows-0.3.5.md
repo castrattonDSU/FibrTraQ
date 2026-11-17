@@ -1,0 +1,714 @@
+# Archived workflows for the 0.3.5 interface
+
+This guide records the former command names and the output-cleanup development revision `b75d168`. Code examples below use that historical interface. Use the current [package guide](../../README.md) for new analyses.
+
+[Back to the quick start](../../README.md) · [Interpretation guide](../../docs/interpretation.md) · [S1c mouse-study recipe](../../docs/mouse-study-workflow.md)
+
+Start with the bundled example and one-analysis template in the README. This
+page retains the configuration, provenance and lower-level workflows needed
+for a reproducible study or an integration with other software.
+
+**On this page:** [Fixed versions](#install-a-fixed-version) ·
+[Private SSH access](#private-repository-access-with-ssh) ·
+[Verify an installed version](#verify-an-installed-version) ·
+[Input checklist](#data-checklist) · [Regional study](#run-a-regional-study) · [Manifest](#manifest-workflow) ·
+[Core function](#core-counting-function) · [Grid safeguards](#coordinate-and-grid-safeguards) ·
+[Outputs](#what-fibrtraq-writes) · [Older report links](#sharing-and-opening-reports) ·
+[Function reference](#main-functions) · [Performance](#backend-and-performance)
+
+## Install a fixed version
+
+The README installs the current version on `main`. For a study,
+choose a reviewed release tag or full 40-character commit SHA, then use the
+same value on every workstation. Replace the placeholder below with that
+actual identifier; a package version alone does not identify a development
+snapshot.
+
+```r
+install.packages("remotes")
+approved_ref <- "<RELEASE_TAG_OR_40_CHARACTER_COMMIT_SHA>"
+remotes::install_github(
+  "castrattonDSU/FibrTraQ",
+  ref = approved_ref,
+  dependencies = NA,
+  upgrade = "never",
+  force = TRUE
+)
+```
+
+Restart R after installing. For private access, accept the repository invitation
+and use your configured GitHub credential. Never store an authentication token
+in this script or an output report.
+
+## Private repository access with SSH
+
+If SSH access is already configured, install the same approved revision with:
+
+```r
+approved_ref <- "<APPROVED_40_CHARACTER_COMMIT_SHA>"
+remotes::install_git(
+  "git@github.com:castrattonDSU/FibrTraQ.git",
+  ref = approved_ref,
+  git = "external",
+  dependencies = NA,
+  upgrade = "never",
+  force = TRUE
+)
+```
+
+GitHub's [SSH connection guide](https://docs.github.com/en/authentication/connecting-to-github-with-ssh)
+explains the one-time setup. Restart R after installation. For an independent
+review, use the installed package; `devtools::load_all()` instead loads a source
+checkout.
+
+## Verify an installed version
+
+Verify the loaded package and the main public interfaces before running study
+data:
+
+```r
+library(FibrTraQ)
+
+required_exports <- c(
+  "ftq_run_files",
+  "ftq_run_regional_study",
+  "ftq_run_example",
+  "ftq_local_search_tables"
+)
+
+required_run_files_arguments <- c(
+  "assignment_mode",
+  "search_radius_mm"
+)
+
+stopifnot(
+  all(required_exports %in% getNamespaceExports("FibrTraQ")),
+  all(required_run_files_arguments %in%
+        names(formals(FibrTraQ::ftq_run_files)))
+)
+
+description <- packageDescription("FibrTraQ")
+cat(
+  "FibrTraQ version: ", description$Version, "\n",
+  "Loaded from: ", find.package("FibrTraQ"), "\n",
+  "GitHub SHA: ", if (is.null(description$RemoteSha)) {
+    "not recorded"
+  } else {
+    description$RemoteSha
+  }, "\n",
+  sep = ""
+)
+```
+
+For an exact-commit review, compare the printed GitHub SHA with the approved
+SHA. Retain that identity with the run record; a development version number by
+itself does not identify an exact source state.
+
+## Data checklist
+
+### Required files
+
+| File | Requirement |
+|---|---|
+| Tractogram | One TrackVis `.trk` or MRtrix `.tck` file containing 3-D streamline points |
+| Focal ROI | One non-empty 3-D NIfTI mask (`.nii` or `.nii.gz`); values should be finite and binary |
+| Target ROIs | One or more named, non-empty 3-D NIfTI masks; values should be finite and binary |
+| Output directory | A new or intentionally replaceable directory for derived files |
+
+### Recommended or optional files
+
+| File | Why it helps |
+|---|---|
+| 3-D reference image | Coordinate conversion and spatial context for reports/QC |
+| 4-D diffusion image plus matching b-values | FibrTraQ can prepare a documented mean low-b reference |
+| Anatomical background image | Clearer static reports and 3-D orientation |
+| Local-region mask | Defines the region used for the non-exclusive `local` classification |
+| Brain, brain-plus-cord, or other context mask | Audits whether streamline endpoints lie inside trusted anatomy |
+
+For each subject, all active masks and images must represent the same voxel
+grid. Matching dimensions alone are not enough; NIfTI affines must also be
+compatible. FibrTraQ rejects grid mismatches rather than silently resampling
+or reheadering them.
+
+Focal, local, and target masks use nonzero values as foreground; preflight
+reports nonbinary values for review. Endpoint context masks are stricter and
+must be finite, binary, three-dimensional, and on the focal grid.
+
+The tractogram's coordinates must also be compatible with that image grid.
+For `.trk`, if the convention is unknown, the package can compare plausible
+mappings for a pilot run, but the selected mapping and 3-D QC still require
+review. Native `.tck` has a defined world-coordinate convention and follows
+the requirements below.
+
+### MRtrix TCK inputs
+
+Use a `.tck` path in the same `tractogram` argument accepted by
+`ftq_run_files()` or a manifest, or in the subject's `tractograms` entry for
+`ftq_run_regional_study()`. No conversion to `.trk` is required. The report, target figures, density maps, endpoint outputs and interactive 3-D viewer
+use the same analysis as the `.trk` workflow.
+
+| Property | Native TCK support |
+|---|---|
+| Storage | Uncompressed, single-file `.tck` with an embedded binary payload; `.tck.gz` and external payload files are not supported |
+| Numeric types | `Float32LE`, `Float32BE`, `Float64LE` and `Float64BE` |
+| Reading | `track_reader = "auto"` streams by default; `"stream"` and `"memory"` are also available |
+| Coordinates | RAS+ world coordinates in millimeters, mapped through the NIfTI affine |
+| Coordinate arguments | `track_space = "auto"` or `"world"`; `axis_flip = NULL` or `c(FALSE, FALSE, FALSE)` |
+| Weights | Ordinary streamline counts; external SIFT2 weights are not applied |
+
+For TCK, `"auto"` selects world coordinates deterministically. It does not
+search for the orientation with the most focal-mask hits. Do not add axis
+flips or override the tractogram affine/voxel size. A negative axis direction
+or oblique orientation encoded in the NIfTI affine is valid and is handled by
+that affine.
+
+The mapping reference must be a genuine NIfTI image with declared spatial
+units (millimeters, meters or micrometers) and a valid, invertible qform or
+sform. When both transforms are declared, they must agree within 0.001 mm at
+the voxel-center grid corners. Missing units, absent or invalid transforms,
+and conflicting qform/sform geometry stop the run. Resolve those source
+metadata with the data producer rather than changing headers to pass a check.
+FibrTraQ converts the declared image units to millimeters for coordinate
+mapping; it does not register or resample the inputs.
+
+If `reference_image` is omitted, the focal NIfTI supplies the coordinate
+reference. A trusted, same-grid anatomical image remains strongly recommended
+for independent spatial review. Plain arrays without NIfTI geometry cannot
+serve as a TCK coordinate reference in a direct core call.
+
+TCK support allows human research tractograms to use these workflows. It does
+not establish anatomical validity for every dataset or change the meaning of
+FibrTraQ's unweighted counts and RSC measures. Review each dataset using the
+[spatial-verification guide](../../docs/spatial-verification.md).
+
+## Run a regional study
+
+Use `ftq_run_regional_study()` when each subject has the same named set of
+regional masks and each region should take a turn as the focal ROI. For every
+subject and requested focal region, all other regions become targets.
+
+For example, 6 subjects with 4 focal regions produce 24
+subject-by-focal-region analyses. They remain 6 independent biological
+subjects, not 24 independent samples.
+
+The function:
+
+- validates subject names, mask labels, non-empty masks, and image grids, and
+  reports nonbinary values for review;
+- optionally prepares a 3-D mean low-b reference from a 4-D image;
+- builds a documented same-grid union of the regional masks by default;
+- runs each focal region against all remaining regions;
+- writes a report with target patterns and interactive QC, maps, tables and validation files;
+- creates one interactive 3-D viewer per run; and
+- creates one study-level HTML index.
+
+### Regional-study input structure
+
+| Argument | R structure |
+|---|---|
+| `tractograms` | Named vector or list with one `.trk` or `.tck` path per subject |
+| `region_masks` | Named outer list; each subject contains the same named regional paths |
+| `reference_images` | Optional named vector/list with one image per subject |
+| `bvals` | Named paths or numeric vectors, required for 4-D references |
+| `endpoint_contexts` | Optional named outer list of trusted context masks |
+| `assignment_mode` | One primary target-assignment mode for every run |
+| `search_radius_mm` | Positive physical radius used by `"local_search"` |
+| `output_dir` | One study-level output directory |
+
+Subject names must match across every supplied object. Regional labels must
+match across subjects, although different subjects may have different image
+dimensions.
+
+### Complete regional-study example
+
+```r
+library(FibrTraQ)
+
+data_root <- "/absolute/path/to/study-data"
+results_dir <- "/absolute/path/to/fibrtraq-regional-results"
+s1 <- file.path(data_root, "subject1")
+s2 <- file.path(data_root, "subject2")
+
+tractograms <- c(
+  subject1 = file.path(s1, "subject1.trk"),
+  subject2 = file.path(s2, "subject2.trk")
+)
+
+region_masks <- list(
+  subject1 = c(
+    cerebellum = file.path(s1, "subject1_cerebellum.nii.gz"),
+    cerebrum = file.path(s1, "subject1_cerebrum.nii.gz"),
+    pontine = file.path(s1, "subject1_pontine.nii.gz"),
+    medullaspinal = file.path(s1, "subject1_medullaspinal.nii.gz")
+  ),
+  subject2 = c(
+    cerebellum = file.path(s2, "subject2_cerebellum.nii.gz"),
+    cerebrum = file.path(s2, "subject2_cerebrum.nii.gz"),
+    pontine = file.path(s2, "subject2_pontine.nii.gz"),
+    medullaspinal = file.path(s2, "subject2_medullaspinal.nii.gz")
+  )
+)
+
+reference_images <- c(
+  subject1 = file.path(s1, "subject1_reference.nii.gz"),
+  subject2 = file.path(s2, "subject2_reference.nii.gz")
+)
+
+study <- ftq_run_regional_study(
+  tractograms = tractograms,
+  region_masks = region_masks,
+  reference_images = reference_images,
+  output_dir = results_dir,
+  description = "regional-connectivity"
+)
+
+stopifnot(
+  all(study$index$run_status == "completed"),
+  all(study$index$validation_passed)
+)
+
+browseURL(study$report_index)
+```
+
+With two subjects and four regions, this call creates eight analyses. The
+study index records every subject, focal region, selected coordinate mapping,
+validation result, and report/output path:
+
+```r
+study$index[, c(
+  "subject",
+  "focal_region",
+  "run_status",
+  "validation_passed",
+  "biological_qc_status",
+  "primary_report",
+  "exploratory_report",
+  "interactive_3d_qc"
+)]
+```
+
+`validation_passed` is the computational gate.
+`biological_qc_status` is a separate `pass`, `review`, or `unavailable`
+assessment. A technically valid run can still require biological review.
+Anatomical endpoint containment is unavailable unless trusted context masks
+are supplied.
+
+### Regional local-mask behavior
+
+The default `local_masks = "union"` builds a same-grid union of all supplied
+regions for each subject. Under that setting, `local` means that a streamline
+stays inside the regional union; it does not mean that the streamline stays
+inside the focal region.
+
+| Setting | Meaning |
+|---|---|
+| `local_masks = "union"` | Default: build one same-grid union per subject |
+| `local_masks = NULL` | Use the active focal mask as the local mask |
+| Named subject paths | Use independently validated local masks |
+| `focal_regions = c("cerebellum", "pontine")` | Run only selected focal regions |
+
+For 4-D references, supply a named `bvals` path or numeric vector for every
+subject. Use a distinct output directory when testing alternative inputs.
+
+Open `study$report_index` and select the subject and focal region. The run
+and prepared-input CSVs record status, paths, input checksums and any derived
+images. The `write_exploratory_report` and `write_qc_viewer` arguments control
+the target and viewer sections of the report.
+
+## Manifest workflow
+
+Use a YAML or JSON manifest when an analysis must be shared, reviewed, or
+rerun without editing R code. Paths may be relative to `dataset_root`.
+
+Minimal YAML example:
+
+```yaml
+dataset_root: /absolute/path/to/dataset
+subject: subject1
+description: cerebellum
+
+tractogram: tractography/subject1.trk
+fnode: rois/subject1_cerebellum.nii.gz
+ref_image: anatomy/subject1_reference.nii.gz
+local:
+
+targets:
+  cerebrum: rois/subject1_cerebrum.nii.gz
+  pontine: rois/subject1_pontine.nii.gz
+  medullaspinal: rois/subject1_medullaspinal.nii.gz
+
+analysis:
+  target_intersection_mode: full_streamline
+  local_search_radius_mm: 2
+
+outputs:
+  output_dir: derivatives/fibrtraq-v0.3.0
+  overwrite: false
+
+report:
+  background_image: anatomy/subject1_reference.nii.gz
+```
+
+`ref_image` defines coordinate conversion between the tractogram and voxel
+grid. `report.background_image` supplies visual anatomy. They serve different
+roles even when they point to the same file.
+
+Preflight and run the manifest:
+
+```r
+library(FibrTraQ)
+
+preflight <- ftq_preflight("/absolute/path/to/manifest.yml")
+stopifnot(preflight$passed)
+
+run <- ftq_run(
+  "/absolute/path/to/manifest.yml",
+  backend = "auto"
+)
+stopifnot(run$validation$passed)
+
+browseURL(run$report$html)
+
+viewer <- ftq_interactive_qc_viewer(
+  run,
+  overwrite = FALSE,
+  open = TRUE
+)
+```
+
+The installed example manifest is also available at:
+
+```r
+system.file(
+  "examples",
+  "manifest-example.yml",
+  package = "FibrTraQ"
+)
+```
+
+`ftq_preflight()` checks input paths, target labels, coordinate and target
+assignment options, mask values, image dimensions and affines, output
+collisions, optional background compatibility, strict endpoint-context
+requirements, and expected regression baselines before the tractogram pass.
+
+`ftq_run()` writes the standard report and core files. Use the viewer call
+above for interactive QC. Use `ftq_run_files()` or
+`ftq_run_regional_study()` for the integrated report with target patterns and interactive 3D QC.
+
+## Core counting function
+
+`FibrTraQ()` is the exported scientific counting engine used by every standard
+workflow. The higher-level functions do not implement alternative counting
+methods. They prepare inputs, call the same core function, validate its result,
+and organize the output files:
+
+```text
+ftq_run_files()
+  -> ftq_run_regional_study()
+    -> ftq_run()
+      -> fibrtraq()
+        -> FibrTraQ()
+```
+
+The lowercase `fibrtraq()` function is a compatibility alias that forwards its
+arguments unchanged to `FibrTraQ()`. It contains no separate analysis logic.
+
+Call `FibrTraQ()` directly when the ROI volumes and tractography are already
+loaded in R or when a program needs direct control over the in-memory
+calculation:
+
+```r
+library(FibrTraQ)
+
+focal <- freesurferformats::read.nifti1.data(
+  "/absolute/path/to/focal.nii.gz"
+)
+local <- freesurferformats::read.nifti1.data(
+  "/absolute/path/to/local.nii.gz"
+)
+targets <- list(
+  cerebrum = freesurferformats::read.nifti1.data(
+    "/absolute/path/to/cerebrum.nii.gz"
+  ),
+  pontine = freesurferformats::read.nifti1.data(
+    "/absolute/path/to/pontine.nii.gz"
+  ),
+  medullaspinal = freesurferformats::read.nifti1.data(
+    "/absolute/path/to/medullaspinal.nii.gz"
+  )
+)
+tracks <- freesurferformats::read.dti.trk(
+  "/absolute/path/to/tractogram.trk"
+)
+reference_image <- "/absolute/path/to/reference.nii.gz"
+
+result <- FibrTraQ(
+  fNode = focal,
+  localROI = local,
+  cNode_list = targets,
+  cNode_labels = names(targets),
+  all_tracks = tracks,
+  track_space = "auto",
+  ref_image = reference_image,
+  backend = "auto",
+  assignment_mode = "full_streamline",
+  search_radius_mm = 2
+)
+
+per_voxel <- result
+roi_summary <- attr(result, "fibrtraq_roi_summary")
+rsc <- rsc_summary(
+  result,
+  percent = TRUE,
+  include_legacy_tracks = FALSE
+)
+endpoint <- ftq_endpoint_tables(result)
+```
+
+`result` contains one row per focal voxel and retains the ROI-level,
+coordinate-mapping, and endpoint results as attributes. The principal
+in-memory outputs are:
+
+| Object | Meaning |
+|---|---|
+| `result` | Per-focal-voxel streamline and target-association table |
+| `attr(result, "fibrtraq_roi_summary")` | ROI-level unique-streamline counts and run totals |
+| `rsc_summary(result, ...)` | Focal-voxel/streamline/target association and RSC summary |
+| `ftq_endpoint_tables(result)` | Endpoint-pair, target-penetration, context, and endpoint-metadata tables |
+
+This call uses the current scientific defaults: `"any"` discretization,
+all occupied focal voxels, stored streamline sample points, full-path target
+assignment, and exact plus one-voxel endpoint analysis. The explicit mode and
+radius make the analysis contract visible; the radius is used only by
+`"local_search"`. Set these arguments explicitly when running a sensitivity
+analysis or reproducing an older method.
+
+A direct core call does not write CSV files, NIfTI maps, validation JSON,
+reports, or the interactive 3-D viewer. Use `ftq_run_files()`,
+`ftq_run_regional_study()`, or `ftq_run()` when those reproducible workflow
+artifacts are required. Direct callers are also responsible for file-level
+preflight and for proving the tractogram's coordinate convention. `FibrTraQ()`
+rejects local and target arrays with different dimensions, rejects different
+unit-normalized NIfTI affines when both objects declare a valid qform/sform,
+and applies the same checks to an explicit reference image whenever that image
+can affect mapping or local search. Coordinate-matrix ROIs are checked for finite,
+integer-compatible, in-bounds voxel indices, but they have no affine metadata;
+their spatial provenance remains the caller's responsibility.
+
+The `.trk` automatic coordinate search shown above is an initial diagnostic, not an
+anatomical alignment test. When `axis_flip` is omitted, the search still scores
+candidate mappings, but stops before counting if the best candidate reflects
+any axis. Sampled ROI overlap cannot distinguish a correct orientation from a
+reflection that happens to intersect more of the focal mask. Independently
+verify the tractogram convention and its alignment with the masks, then set
+`track_space` and `axis_flip` explicitly. Validated reflections remain supported;
+no flips is not a universal solution. Review the selected mapping and 3-D QC
+before interpreting results, and pin `discretization` for a production analysis.
+See `?FibrTraQ` for the complete core interface.
+
+## Coordinate and grid safeguards
+
+These checks matter for every workflow:
+
+1. **Use one subject grid at a time.** Focal, local, target, reference,
+   background, and endpoint-context images must have compatible dimensions and
+   affines. File workflows check these before counting, and the direct
+   `FibrTraQ()` engine independently rejects incompatible local, target, and
+   used reference grids.
+2. **Treat automatic `.trk` mapping as a pilot.** `track_space = "auto"` and
+   `discretization = "any"` compare plausible mappings. If `axis_flip` is omitted
+   and the best candidate reflects an axis, the analysis stops for an explicit
+   orientation decision. An unreflected candidate also needs independent
+   alignment review; a successful run does not establish anatomical validity.
+3. **Use the format's coordinate convention.** For `.trk`, supported spaces include
+   `"voxel"`, `"voxelmm"`, `"vox10"`, `"world"`, and `"trackvis"`. Once verified,
+   pin both `track_space` and `axis_flip`, including explicit `FALSE` values for
+   axes that must not be reflected. Native `.tck` accepts only `"auto"` or
+   `"world"`, with no extra axis flips, and requires valid NIfTI geometry as
+   described in [TCK inputs](#mrtrix-tck-inputs).
+4. **Do not repair alignment by changing headers casually.**
+   `reheader_images_to_region_grid = TRUE` is only for data whose voxel-index
+   correspondence was independently proven and whose source header is known
+   to be non-authoritative.
+5. **Use trusted-affine regridding conservatively.** `ftq_regrid_mask()` cannot
+   repair a mask whose spatial metadata are wrong.
+6. **Review the whole streamline.** A target-positive streamline can extend
+   outside the displayed foreground or anatomical mask. The viewer shows the
+   sampled tractography points; it does not clip them to anatomy.
+7. **Distinguish density context from anatomy.** Without a reference image,
+   report heatmaps use a grayscale background derived from the tractogram under
+   the selected mapping. This background cannot independently validate that
+   mapping. Use trusted anatomical images and spatial provenance to assess
+   alignment.
+
+Use `ftq_mask_grid_report()` for a read-only grid audit:
+
+```r
+grid <- ftq_mask_grid_report(
+  mask = "/absolute/path/to/mask.nii.gz",
+  template_image = "/absolute/path/to/focal.nii.gz",
+  output_csv = "/absolute/path/to/mask-grid-report.csv"
+)
+
+grid
+```
+
+When several trusted regional masks already share the focal grid,
+`ftq_make_union_mask()` is preferable to resampling an untrusted
+whole-brain mask.
+
+## What FibrTraQ writes
+
+Open the HTML report returned in `report_index`. See the [main interpretation summary](../../README.md#read-the-main-results) for the RSC formula and counting populations. The main report leads with the
+RSC summary (RSC last), core maps, complete voxel data and the relevant
+fate/coverage interpretation. **Destination** names the target or local
+comparison, and **Total number of fNode voxels** states the denominator.
+Detailed endpoint QC, target patterns,
+provenance and diagnostics remain accessible in supporting sections.
+
+Refer to the [package field dictionary](../../inst/output-guide/OUTPUTS_README.md)
+for field definitions, units and column aliases.
+
+The high-level workflows organize the following outputs under the chosen directory:
+
+| Output | Interpretation |
+|---|---|
+| HTML report | RSC, spatial previews, fate/coverage, targets, methods, validation and interactive QC for the selected analysis |
+| Primary-target lookup CSV | Maps integer target codes to labels in `tables/` |
+| Interactive 3-D QC | Target-balanced quota subset of positive streamlines, ROI extents, end voxels, and optional advanced hit/class controls |
+| Original per-voxel CSV | Complete focal-voxel/streamline association counts with the preserved canonical schema |
+| All-voxel CSV and column-role CSV | The same complete counts with explicit one-based image-array coordinates; the companion file distinguishes coordinates from targets with colliding names |
+| Local-fraction CSV and figure | `local / tracks` when tracks is positive. Unassigned focal voxels have an undefined fraction |
+| ROI-summary CSV | ROI-level unique-streamline totals and run metadata |
+| RSC CSV | Target associations and fraction of focal voxels connected to each target |
+| Fate CSV | Local, leave-with-target, and leave-without-target association groups |
+| Report connection-summary CSV | Compact local/target rows with unique streamline connections, connected focal voxels, RSC and the total focal-voxel denominator; its existing file schema is preserved |
+| Report fate-summary CSV | Mutually exclusive unique-streamline partition into local, leave-with-cNode, and leave-without-cNode categories |
+| End-voxel summary CSV | Exact and one-voxel end-voxel membership and paired ends |
+| End-voxel penetration CSV | Histogram of unique target voxels visited per target-positive streamline |
+| Endpoint coverage CSV (`*_endpoint-context.csv`) | Reference-grid and optional anatomical-mask containment across valid mapped streamlines, before focal filtering |
+| Local-search assignment CSV | One row per focal-positive streamline, recording end-voxel labels and distances, the assigned cNode, and whether the voxelized path also enters that cNode |
+| NIfTI maps | Voxel-resolved result fields on the focal grid |
+| Metadata and validation JSON | Machine-readable methods, input provenance, arithmetic, reconciliation, regression and separate biological-QC status |
+| Ranked CSVs (`*_ranked_<metric>_voxels.csv`) | Every focal voxel, including zero counts, ranked by the named target or metric, with deterministic coordinate tie-breaking |
+
+For one analysis the HTML is in the focal-region directory. For several
+subject/region combinations a single study report is written at the root.
+
+```text
+output/
+├── fibrtraq-run-index.csv
+├── fibrtraq-prepared-inputs.csv
+└── subject/
+    └── focal-region/
+        ├── figures/    PNGs and 3D viewer data
+        ├── tables/     Scientific CSVs, rankings and lookup tables
+        ├── maps/       Core NIfTIs and any density background
+        └── ...         Analysis metadata and validation JSON
+```
+
+A subject's `prepared/` directory contains derived inputs only when needed.
+Use `ftq_exploratory_summary(result_csv, output_dir = research_dir,
+template_image = focal_mask, write_maps = TRUE)` for detailed exploratory
+exports. Set `output_dir = NULL, write_maps = FALSE` to return the same
+calculations in memory.
+
+Use the original `*_per-voxel-hits.csv` for general analysis. The all-voxel
+export is for inspection and coordinate lookup; do not treat its added
+coordinate columns as target counts when loading it with `read.csv()`.
+
+If a report or viewer fails after the analysis finishes, the run index retains
+the completed scientific files and records the failing stage. Inspect
+`analysis_status`, `validation_status` and the individual report statuses:
+the legacy aggregate `run_status` can be `"failed"` even when the analysis
+completed. A missing optional input, an unavailable anatomical QC assessment,
+and a computation failure are different conditions. Actionable warnings and
+failures remain visible.
+
+When no anatomical background is supplied, `.trk` and `.tck` workflows can generate an
+exact tractogram-density image for report orientation. This is visualization
+context only. It is not MRI, a brain mask, tissue volume, or evidence of
+anatomical alignment. The density image is stored with the core maps;
+its summary and settings are retained in the run-metadata JSON rather than
+separate context files.
+
+Generated metadata preserve source paths, checksums, user-supplied subject
+labels, the normalized target-assignment mode, and the local-search radius for
+reproducibility. Review these fields and use de-identified subject labels
+before sharing an output bundle publicly.
+
+## Windows output paths
+
+Use a short writable output root, for example `C:/FibrTraQ/run01`, and concise
+subject, description, focal-region and target labels. Subject, region and table filenames contribute to the full path length.
+
+Before regional analysis, FibrTraQ checks planned Windows output paths. If a
+path exceeds the supported length, the run stops with that path and guidance
+to choose a shorter destination. Resolve the error before rerunning; existing
+output folders are not renamed or deleted. The same analysis settings and
+input masks can be reused with a new output directory.
+
+This protects the portable report workflow; it does not establish support for
+arbitrarily long paths. Some Windows file operations and browser tools retain
+a 260-character full-path limit even when other applications can create the
+file. Keep complete results folders together and use a short location when
+moving reports between workstations.
+
+## Sharing and opening reports
+
+Copy or ZIP the **whole results folder**, keeping its subfolders together.
+Extract the ZIP before opening the HTML report in a browser.
+The report uses relative links, so the complete folder can move between
+Windows, macOS and Linux without changing its links. Spaces in folder names
+are supported. CSV provenance retains the original input and execution paths.
+
+For an older summary whose Windows links contain `%5C`, install the corrected
+package and open the repair script in RStudio:
+
+```r
+file.edit(system.file(
+  "scripts", "fibrtraq-rebuild-report-index.R", package = "FibrTraQ"
+))
+```
+
+Set its `report_dir` to the folder containing `fibrtraq-run-index.csv`, then
+run the script. Open the new `fibrtraq-report-index-portable.html`. This rebuilds
+only the summary, preserves the original files, and requires no tractography
+rerun. It also works after moving a complete results folder to another machine.
+
+## Main functions
+
+| Function | Purpose |
+|---|---|
+| `ftq_run_example()` | Run and verify the bundled known-answer analysis |
+| `ftq_run_files()` | Run one complete focal-versus-target analysis from files |
+| `ftq_run_regional_study()` | Run all requested subject-by-focal regional analyses |
+| `ftq_preflight()` | Validate a manifest before the tractogram pass |
+| `ftq_run()` | Run one manifest-defined analysis |
+| `FibrTraQ()` | Core in-memory scientific counting engine used by every workflow |
+| `ftq_interactive_qc_viewer()` | Build the rotatable 3-D QC viewer |
+| `ftq_endpoint_tables()` | Retrieve endpoint, penetration, context, and metadata tables |
+| `ftq_target_summary_tables()` | Separate unique-streamline and voxel-association target summaries |
+| `ftq_mask_grid_report()` | Audit dimensions, affines, and optional mask overlap without modifying files |
+
+Open a function's help page or the complete package index in R:
+
+```r
+?ftq_run_files
+?ftq_run_regional_study
+?ftq_run
+?FibrTraQ
+help(package = "FibrTraQ")
+```
+
+## Backend and performance
+
+The high-level file runners use `backend = "auto"` by default: they select the
+compiled C++ backend when available and otherwise fall back to the reference R
+backend. The manifest example passes this setting explicitly. Direct
+`ftq_run()` and `FibrTraQ()` calls retain the R backend default for backward
+compatibility.
+
+Large `.trk` and `.tck` files are streamed in chunks by default. No GPU, CUDA, Python,
+ANTs, or other external analysis program is required to run the R package.
+Use `backend = "r"` only for validation or debugging.

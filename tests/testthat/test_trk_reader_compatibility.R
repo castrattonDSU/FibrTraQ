@@ -1,5 +1,5 @@
 test_that("TRK memory import accepts the legacy reader signature", {
-  path <- ftq_example_data()$tractogram
+  path <- ftq_test_example_files()$tractogram
   records <- list(list(num_points = 2L, coords = rbind(c(1, 2, 3), c(4, 5, 6))))
   expected <- list(header = list(id_string = "TRACK"), tracks = records)
   called <- FALSE
@@ -19,7 +19,7 @@ test_that("TRK memory import accepts the legacy reader signature", {
 })
 
 test_that("TRK memory import requests native coordinates without hiding warnings", {
-  path <- ftq_example_data()$tractogram
+  path <- ftq_test_example_files()$tractogram
   records <- list(list(num_points = 2L, coords = rbind(c(1, 2, 3), c(4, 5, 6))))
   expected <- list(header = list(id_string = "TRACK"), tracks = records)
   seen_coords <- NULL

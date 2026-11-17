@@ -159,11 +159,15 @@ test_that("file workflow blocks an unapproved reflection without scientific outp
     verbose = FALSE,
     progress = FALSE
   )
-  expect_error(do.call(ftq_run_files, args), "Automatic mapping would reflect")
+  expect_error(do.call(fibrtraq_single, args), "Automatic mapping would reflect")
   # A failed status/index is useful, but no count, map, or scientific report
   # may make the rejected orientation look like a completed analysis.
-  expect_length(list.files(file.path(rejected_output, "synthetic", "focal"),
-                           recursive = TRUE, all.files = TRUE), 0L)
+  files <- list.files(file.path(rejected_output, "synthetic", "focal"),
+                      recursive = TRUE, full.names = TRUE)
+  expect_length(files, 1L)
+  expect_match(basename(files), "_report[.]html$")
+  expect_match(paste(readLines(files), collapse = "\n"), "Automatic mapping would reflect",
+               fixed = TRUE)
   failed_index <- utils::read.csv(file.path(rejected_output, "fibrtraq-run-index.csv"))
   expect_identical(failed_index$run_status, "failed")
   expect_match(failed_index$error, "Automatic mapping would reflect")
@@ -171,7 +175,7 @@ test_that("file workflow blocks an unapproved reflection without scientific outp
   args$output_dir <- file.path(root, "verified")
   args$track_space <- "voxelmm"
   args$axis_flip <- c(FALSE, FALSE, FALSE)
-  result <- do.call(ftq_run_files, args)
+  result <- do.call(fibrtraq_single, args)
   run <- result$index[1L, , drop = FALSE]
   expect_identical(run$run_status, "completed")
   expect_true(run$validation_passed)

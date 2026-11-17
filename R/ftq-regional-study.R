@@ -2,11 +2,11 @@
 #'
 #' This is the simplest file-based FibrTraQ entry point. Supply one TrackVis or MRtrix
 #' tractogram, one focal mask, one or more named target masks, and an output
-#' directory. The function runs the standard analysis and writes the static
-#' report, target report, endpoint tables, maps, interactive 3-D QC
-#' viewer, and a report index.
+#' directory. The function writes one HTML report in the focal-region folder.
+#' It contains the results, target summaries and interactive 3-D QC viewer.
+#' Figures, scientific tables and maps are stored alongside the report.
 #'
-#' The function delegates to [ftq_run_regional_study()] with one subject and
+#' The function delegates to [fibrtraq_study()] with one subject and
 #' one focal region. It does not implement separate counting semantics. Subject
 #' identifiers remain character labels, including leading zeros. Subject and
 #' region labels must produce distinct output folders after filename sanitization
@@ -20,6 +20,14 @@
 #' alignment independently before interpreting results. Counts are unweighted;
 #' external SIFT2 weights are not applied.
 #'
+#' By default each target NIfTI stores an unweighted count at each focal voxel.
+#' A streamline contributes one if its stored path points visit that voxel and
+#' also visit the named target. Repeated visits count once per streamline and
+#' focal voxel. Voxels outside the focal mask have value zero. Stored points can
+#' miss crossings between them. `streamline_voxelization_mode` determines how
+#' paths are sampled, `focal_assignment_mode` determines which focal voxels
+#' receive a count, and `assignment_mode` defines a target connection.
+#'
 #' @param tractogram Path to one TrackVis `.trk` or MRtrix `.tck` file.
 #'   TCK supports uncompressed, single-file Float32/Float64 data in either byte
 #'   order. Compressed `.tck.gz` and external TCK payload files are unsupported.
@@ -31,8 +39,8 @@
 #'   actual identifier explicitly, for example `subject = "S1c"` or `"001"`.
 #'   If omitted, a message identifies the retained `"subject1"` default.
 #' @param focal_label Label for the focal mask.
-#' @param local_mask Optional binary local-region mask. When omitted, the focal
-#'   mask is used as the package's local-region default.
+#' @param local_mask A path to a binary local-region mask, or `"union"` to
+#'   use the union of the focal and target masks. The default uses the focal mask.
 #' @param reference_image Optional 3-D reference image, or a 4-D diffusion image
 #'   accompanied by `bvals`. The reference is used for coordinate conversion
 #'   when required and as the default report background. For TCK, the focal
@@ -51,44 +59,62 @@
 #'   different affine may be copied to the focal-mask grid without resampling.
 #'   Leave this `FALSE` unless an independent geometry audit has established
 #'   voxel-index correspondence and the source image header is non-authoritative.
-#' @param track_space Coordinate-space setting passed to [ftq_run()]. Native
+#' @param track_space Space used to map tractogram coordinates onto the mask grid. Native
 #'   TCK accepts `"auto"` or `"world"`; both use world coordinates deterministically.
-#' @param discretization Discretization setting passed to [ftq_run()].
+#' @param discretization Rule for converting continuous voxel coordinates to voxel indices.
 #' @param axis_flip Optional three-value logical axis flip. For TRK, when
 #'   omitted, automatic mapping stops if its preferred candidate would reflect
 #'   an axis. Verify alignment before explicitly setting `track_space` and
 #'   `axis_flip`. Native TCK permits only `NULL` or three `FALSE` values.
-#' @param focal_assignment_mode Focal assignment mode passed to [ftq_run()].
-#' @param streamline_voxelization_mode Streamline voxelization mode passed to
-#'   [ftq_run()].
-#' @param endpoint_analysis Endpoint analysis mode passed to [ftq_run()].
+#' @param focal_assignment_mode Assign a streamline to every focal voxel it visits (default),
+#'   or only to its first focal intersection.
+#' @param streamline_voxelization_mode Use stored streamline points (default), or sample
+#'   along segments between points with `"segment_interpolation"`.
+#' @param endpoint_analysis Use `"exact_and_dilated1"` to audit endpoint membership
+#'   in exact and one-voxel-dilated masks, or `"none"` to omit this audit.
 #' @param track_reader Tractogram reader used by the run. `"auto"` streams both
 #'   TRK and TCK by default; `"stream"` and `"memory"` may be selected explicitly.
 #' @param track_chunk_size Streamline chunk size used by the streaming reader.
-#' @param backend Counting backend passed to [ftq_run()].
+#' @param backend Counting implementation: `"auto"`, `"cpp"` or `"r"`.
 #' @param write_maps Whether to write the standard NIfTI maps.
-#' @param write_report Whether to write the standard static report.
-#' @param write_exploratory_report Whether to write the target report.
-#' @param write_qc_viewer Whether to write the interactive 3-D QC viewer.
+#' @param write_report Whether to include the main results section and its figures.
+#' @param write_exploratory_report Whether to include target summaries and figures in the report.
+#' @param write_qc_viewer Whether to include an interactive 3-D QC viewer in the report.
 #' @param sample_per_target Number of target-positive streamlines sampled per
 #'   target in the interactive viewer.
 #' @param overwrite Whether existing outputs may be replaced.
 #' @param verbose Emit preparation and run messages.
 #' @param progress Emit streamline-counting progress messages.
-#' @param open Open the report index after successful completion.
-#' @param assignment_mode Target assignment mode passed to [ftq_run()].
-#'   Legacy and paper terminology aliases are accepted and normalized.
+#' @param check_only If `TRUE`, check the specified inputs and planned destination
+#'   for every requested analysis. The check reads image data and tractogram headers and may
+#'   prepare temporary reference images or union masks. Complete streamline
+#'   decoding takes place during analysis. No results are written. Review
+#'   anatomical alignment independently.
+#' @param open Open the combined report after successful completion.
+#' @param assignment_mode Use `"full_streamline"` (default) for an intersection anywhere
+#'   along the streamline, `"endpoint_voxels"` for an unambiguous endpoint
+#'   pair, or `"local_search"` for an endpoint pair within the search radius.
 #' @param search_radius_mm Finite, strictly positive scanner-space search radius
 #'   in millimeters used when `assignment_mode = "local_search"`.
 #' @param report_slices Optional integer z-slice indices, using one-based
 #'   focal-image array indexing, for report previews. `NULL` selects slices
 #'   automatically. Every index must lie within each run's focal-image grid.
 #'
-#' @return An [ftq_run_regional_study()] result containing one run. The
-#'   `report_index` member points to a local HTML page linking every report and
-#'   the interactive viewer.
+#' @return With `check_only = TRUE`, a list with `passed`, the per-analysis
+#'   `index`, and detailed `checks`. Otherwise, an [fibrtraq_study()] result containing one run. The
+#'   `report_index` member points to the single HTML report.
+#' @examples
+#' inputs <- system.file("extdata", "fibrtraq-known-answer", "inputs", package = "FibrTraQ")
+#' result <- fibrtraq_single(
+#'   tractogram = file.path(inputs, "sub-example_tractogram.trk"),
+#'   focal_mask = file.path(inputs, "sub-example_focal.nii.gz"),
+#'   target_masks = c(cortex = file.path(inputs, "sub-example_target-cortex.nii.gz")),
+#'   output_dir = tempfile("single-"), subject = "sub-example",
+#'   track_space = "voxel", axis_flip = rep(FALSE, 3), discretization = "round"
+#' )
+#' result$report_index
 #' @export
-ftq_run_files <- function(
+fibrtraq_single <- function(
     tractogram,
     focal_mask,
     target_masks,
@@ -127,7 +153,8 @@ ftq_run_files <- function(
       "local_search"
     ),
     search_radius_mm = 2,
-    report_slices = NULL) {
+    report_slices = NULL,
+    check_only = FALSE) {
   target_intersection_mode <- ftq_normalize_target_intersection_mode(
     assignment_mode
   )
@@ -143,7 +170,7 @@ ftq_run_files <- function(
   }
   one_path <- function(x, argument) {
     x <- one_label(x, argument)
-    normalizePath(path.expand(x), mustWork = TRUE)
+    ftq_study_input_path(x, must_exist = !isTRUE(check_only))
   }
 
   if (missing(subject)) {
@@ -159,7 +186,7 @@ ftq_run_files <- function(
   target_masks <- ftq_regional_study_named_paths(
     target_masks,
     "target_masks",
-    required_names = NULL
+    required_names = NULL, must_exist = !isTRUE(check_only)
   )
   if (focal_label %in% names(target_masks)) {
     stop(
@@ -179,8 +206,8 @@ ftq_run_files <- function(
   } else {
     stats::setNames(one_path(bvals, "bvals"), subject)
   }
-  local_value <- if (is.null(local_mask)) {
-    NULL
+  local_value <- if (identical(local_mask, "union") || is.null(local_mask)) {
+    local_mask
   } else {
     stats::setNames(one_path(local_mask, "local_mask"), subject)
   }
@@ -190,7 +217,7 @@ ftq_run_files <- function(
     stats::setNames(list(endpoint_contexts), subject)
   }
 
-  ftq_run_regional_study(
+  fibrtraq_study(
     tractograms = stats::setNames(tractogram, subject),
     region_masks = stats::setNames(
       list(c(stats::setNames(focal_mask, focal_label), target_masks)),
@@ -227,7 +254,8 @@ ftq_run_files <- function(
     open = open,
     assignment_mode = target_intersection_mode,
     search_radius_mm = local_search_radius_mm,
-    report_slices = report_slices
+    report_slices = report_slices,
+    check_only = check_only
   )
 }
 
@@ -237,16 +265,24 @@ ftq_run_files <- function(
 #' subject, using all remaining regional masks as targets. The function keeps
 #' study orchestration inside the package: it can prepare a 3-D mean low-b
 #' reference from a 4-D diffusion image, build a same-grid regional union mask,
-#' generate the primary and target reports, build the interactive 3-D QC
-#' viewer, and write a study-level report index. Subject identifiers remain
+#' generate results and target figures, and build interactive 3-D QC viewers.
+#' A study with multiple analyses has one HTML report in the output root,
+#' with subject and focal-region selection. Subject identifiers remain
 #' character labels, including leading zeros. Subject and region labels must
 #' produce distinct output folders after filename sanitization and case folding
 #' so the result bundle also works on Windows.
 #'
 #' Native `.tck` inputs use RAS+ world coordinates in millimeters and require
-#' valid NIfTI geometry. See [ftq_run_files()] for TCK format and spatial
+#' valid NIfTI geometry. See [fibrtraq_single()] for TCK format and spatial
 #' requirements. The same reports, maps and viewer are generated for both formats.
 #'
+#' Each subject's target maps use the per-voxel counting rule described in
+#' [fibrtraq_single()].
+#'
+#' @param study_sheet Path to a CSV with one row per subject, columns `subject`,
+#'   `tractogram`, optional `reference_image`, and one `mask:<region>` column per
+#'   region (at least two). Relative paths are resolved from the sheet. Use this
+#'   instead of `tractograms`, `region_masks` and `reference_images`.
 #' @param tractograms Named character vector or list of `.trk` or `.tck`
 #'   tractogram paths, with one entry per subject.
 #' @param region_masks Named list with one element per subject. Each subject
@@ -266,9 +302,10 @@ ftq_run_files <- function(
 #'   image is used.
 #' @param focal_regions Region labels to analyze as focal regions. Defaults to
 #'   every label in `region_masks`.
-#' @param local_masks Either `"union"` to build a union of all supplied regional
-#'   masks for each subject, `NULL` to use the focal mask as the package local
-#'   default, or a named vector/list of subject-specific local-mask paths.
+#' @param local_masks The default (`NULL`) uses the focal mask for each analysis,
+#'   matching [fibrtraq_single()]. Use `"union"` to build a union of every
+#'   supplied region for each subject (the 0.3.5 study default), or supply a
+#'   named vector/list of subject-specific local-mask paths.
 #' @param endpoint_contexts Optional named outer list with one element per
 #'   subject. Each subject element is a named vector/list of binary anatomical
 #'   context-mask paths.
@@ -280,29 +317,31 @@ ftq_run_files <- function(
 #'   geometry audit has established voxel-index correspondence and the source
 #'   image affine is known not to define the analysis grid. A named
 #'   subject-specific logical vector/list is accepted.
-#' @param track_space Coordinate-space setting passed to [ftq_run()]. Supply one
+#' @param track_space Space used to map tractogram coordinates onto the mask grid. Supply one
 #'   value for all subjects or a named subject-specific vector/list. Native TCK
 #'   accepts only `"auto"` or `"world"`; both select world coordinates directly.
-#' @param discretization Discretization setting passed to [ftq_run()]. Supply
+#' @param discretization Rule for converting continuous voxel coordinates to voxel indices. Supply
 #'   one value/vector for all subjects or a named subject-specific list.
 #' @param axis_flip Optional three-value logical axis flip. For TRK, when
 #'   omitted, automatic mapping stops if its preferred candidate would reflect
 #'   an axis. Verify alignment before explicitly setting `track_space` and
 #'   `axis_flip`. A named subject-specific list is also accepted. Native TCK
 #'   permits only `NULL` or three `FALSE` values.
-#' @param focal_assignment_mode Focal assignment mode passed to [ftq_run()].
-#' @param streamline_voxelization_mode Streamline voxelization mode passed to
-#'   [ftq_run()].
-#' @param endpoint_analysis Endpoint analysis mode passed to [ftq_run()].
+#' @param focal_assignment_mode Assign a streamline to every focal voxel it visits (default),
+#'   or only to its first focal intersection.
+#' @param streamline_voxelization_mode Use stored streamline points (default), or sample
+#'   along segments between points with `"segment_interpolation"`.
+#' @param endpoint_analysis Use `"exact_and_dilated1"` to audit endpoint membership
+#'   in exact and one-voxel-dilated masks, or `"none"` to omit this audit.
 #' @param track_reader Tractogram reader used by each run. `"auto"` streams both
 #'   TRK and TCK by default; `"stream"` and `"memory"` may be selected explicitly.
 #' @param track_chunk_size Streamline chunk size used by the streaming reader.
-#' @param backend Counting backend passed to [ftq_run()].
+#' @param backend Counting implementation: `"auto"`, `"cpp"` or `"r"`.
 #' @param write_maps Whether to write the standard NIfTI maps. Target-report
 #'   figures are computed in memory and do not write exploratory NIfTI maps.
-#' @param write_report Whether to write the standard static report.
-#' @param write_exploratory_report Whether to write the target report.
-#' @param write_qc_viewer Whether to write the interactive 3-D QC viewer.
+#' @param write_report Whether to include the main results section and its figures.
+#' @param write_exploratory_report Whether to include target summaries and figures in the report.
+#' @param write_qc_viewer Whether to include an interactive 3-D QC viewer in the report.
 #' @param sample_per_target Number of target-positive streamlines sampled per
 #'   target in each interactive viewer.
 #' @param overwrite Whether existing outputs may be replaced.
@@ -314,30 +353,50 @@ ftq_run_files <- function(
 #'   execution. A presentation failure does not discard scientific results.
 #' @param verbose Emit study and run progress messages.
 #' @param progress Emit streamline-counting progress messages.
-#' @param open Open the study report index after successful completion.
-#' @param assignment_mode Target assignment mode passed to [ftq_run()].
-#'   Legacy and paper terminology aliases are accepted and normalized.
+#' @param check_only If `TRUE`, check the specified inputs and planned destination
+#'   for every requested analysis. The check reads image data and tractogram headers and may
+#'   prepare temporary reference images or union masks. Complete streamline
+#'   decoding takes place during analysis. No results are written. Review
+#'   anatomical alignment independently.
+#' @param open Open the combined report after successful completion.
+#' @param assignment_mode Use `"full_streamline"` (default) for an intersection anywhere
+#'   along the streamline, `"endpoint_voxels"` for an unambiguous endpoint
+#'   pair, or `"local_search"` for an endpoint pair within the search radius.
 #' @param search_radius_mm Finite, strictly positive scanner-space search radius
 #'   in millimeters used when `assignment_mode = "local_search"`.
 #' @param report_slices Optional integer z-slice indices, using one-based
 #'   focal-image array indexing, for report previews. `NULL` selects slices
 #'   automatically. Every index must lie within each run's focal-image grid.
 #'
-#' @return An object containing the run index, prepared-input index, study
+#' @return With `check_only = TRUE`, a list with `passed`, the per-analysis
+#'   `index`, and detailed `checks`. Otherwise, an object containing the run index, prepared-input index, study
 #'   report path, CSV index path, and output directory. The run index retains
 #'   `run_status` and adds `analysis_status`, `validation_status`, individual
 #'   presentation statuses and error messages. Biological QC is reported
 #'   separately from computational validation.
+#' @examples
+#' # The same synthetic files stand in for two subjects in this example.
+#' inputs <- system.file("extdata", "fibrtraq-known-answer", "inputs", package = "FibrTraQ")
+#' trk <- file.path(inputs, "sub-example_tractogram.trk")
+#' regions <- c(focal = file.path(inputs, "sub-example_focal.nii.gz"),
+#'              cortex = file.path(inputs, "sub-example_target-cortex.nii.gz"))
+#' study <- fibrtraq_study(
+#'   tractograms = c(mouse1 = trk, mouse2 = trk),
+#'   region_masks = list(mouse1 = regions, mouse2 = regions),
+#'   focal_regions = "focal", local_masks = NULL, output_dir = tempfile("study-"),
+#'   track_space = "voxel", axis_flip = rep(FALSE, 3), discretization = "round"
+#' )
+#' study$report_index
 #' @export
-ftq_run_regional_study <- function(
-    tractograms,
-    region_masks,
+fibrtraq_study <- function(
+    tractograms = NULL,
+    region_masks = NULL,
     output_dir,
     reference_images = NULL,
     bvals = NULL,
     background_images = NULL,
     focal_regions = NULL,
-    local_masks = "union",
+    local_masks = NULL,
     endpoint_contexts = NULL,
     description = "regional-study",
     low_b_max = 50,
@@ -367,7 +426,22 @@ ftq_run_regional_study <- function(
       "local_search"
     ),
     search_radius_mm = 2,
-    report_slices = NULL) {
+    report_slices = NULL,
+    check_only = FALSE,
+    study_sheet = NULL) {
+  if (!is.logical(check_only) || length(check_only) != 1L || is.na(check_only)) {
+    stop("check_only must be TRUE or FALSE.", call. = FALSE)
+  }
+  if (!is.null(study_sheet)) {
+    if (!is.null(tractograms) || !is.null(region_masks) || !is.null(reference_images)) {
+      stop("When using study_sheet, put tractograms, regional masks and reference images in the sheet.",
+           call. = FALSE)
+    }
+    sheet <- ftq_read_study_sheet(study_sheet)
+    tractograms <- sheet$tractograms
+    region_masks <- sheet$region_masks
+    reference_images <- sheet$reference_images
+  }
   target_intersection_mode <- ftq_normalize_target_intersection_mode(
     assignment_mode
   )
@@ -408,11 +482,19 @@ ftq_run_regional_study <- function(
     background_images = background_images,
     bvals = bvals,
     local_masks = local_masks,
-    endpoint_contexts = endpoint_contexts
+    endpoint_contexts = endpoint_contexts,
+    must_exist = !check_only
   )
   subjects <- inputs$subjects
   region_labels <- inputs$region_labels
-  ftq_regional_study_check_labels(subjects, "subject")
+  conflicts <- ftq_conflicting_output_labels(region_labels)
+  if (length(conflicts)) {
+    stop("Region labels must produce distinct filenames on case-insensitive systems. ",
+         "Rename these conflicting regions: ", paste(conflicts, collapse = ", "), call. = FALSE)
+  }
+  ftq_regional_study_check_labels(subjects, "subject", reserved = c(
+    "fibrtraq-run-index.csv", "fibrtraq-prepared-inputs.csv", "fibrtraq-report-index.html"
+  ))
 
   if (is.null(focal_regions)) {
     focal_regions <- region_labels
@@ -433,6 +515,13 @@ ftq_run_regional_study <- function(
     }
   }
 
+  # In a multi-focal study every region is a destination in at least one run.
+  destination_labels <- if (length(focal_regions) == 1L) setdiff(region_labels, focal_regions) else region_labels
+  reserved <- ftq_reserved_target_labels(destination_labels)
+  if (length(reserved)) {
+    stop("Reserved target labels conflict with built-in result columns or ranked tables: ",
+         paste(reserved, collapse = ", "), call. = FALSE)
+  }
   ftq_regional_study_check_labels(focal_regions, "focal-region", reserved = "prepared")
   description <- ftq_sanitize_label(as.character(description)[1])
   if (is.na(description) || !nzchar(description)) {
@@ -445,47 +534,47 @@ ftq_run_regional_study <- function(
   }
 
   output_dir <- ftq_absolute_output_path(output_dir)
-  ftq_check_windows_output_paths(ftq_regional_study_output_paths(
+  index_csv <- file.path(output_dir, "fibrtraq-run-index.csv")
+  prepared_csv <- file.path(output_dir, "fibrtraq-prepared-inputs.csv")
+  report_index <- ftq_study_report_path(output_dir, subjects, focal_regions, description)
+  planned_paths <- ftq_regional_study_output_paths(
     output_dir, subjects, region_labels, focal_regions, description,
     write_maps, write_report, write_exploratory_report, write_qc_viewer,
     write_endpoint = identical(endpoint_analysis, "exact_and_dilated1"),
-    write_local_search = identical(target_intersection_mode, "local_search")
-  ), output_dir)
-  dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
-  output_dir <- normalizePath(output_dir, mustWork = TRUE)
-  index_csv <- file.path(output_dir, "fibrtraq-run-index.csv")
-  prepared_csv <- file.path(output_dir, "fibrtraq-prepared-inputs.csv")
-  report_index <- file.path(output_dir, "fibrtraq-report-index.html")
-  ftq_check_overwrite(c(index_csv, prepared_csv, report_index), overwrite)
-
-  prepared_rows <- vector("list", length(subjects))
-  names(prepared_rows) <- subjects
-  run_rows <- vector("list", length(subjects) * length(focal_regions))
-  run_number <- 0L
-  total_runs <- length(run_rows)
-  # Persist the available record after each stage, including before a default
-  # stop. Existing scientific files are never reconstructed or replaced here.
-  persist_index <- function() {
-    prepared_index <- do.call(rbind, Filter(Negate(is.null), prepared_rows))
-    if (is.null(prepared_index)) prepared_index <- data.frame(subject = character())
-    run_index <- do.call(rbind, Filter(Negate(is.null), run_rows))
-    if (is.null(run_index)) {
-      run_index <- ftq_regional_study_run_row(
-        subject = "", focal_region = "", run = NULL, exploratory = NULL,
-        viewer = NULL, started_at = "", error = NULL
-      )[FALSE, , drop = FALSE]
-    }
-    rownames(prepared_index) <- rownames(run_index) <- NULL
-    utils::write.csv(prepared_index, prepared_csv, row.names = FALSE)
-    utils::write.csv(run_index, index_csv, row.names = FALSE)
-    ftq_write_regional_study_index(run_index, report_index, output_dir, description)
-    invisible(list(prepared_inputs = prepared_index, index = run_index))
+    write_local_search = identical(target_intersection_mode, "local_search"),
+    context_subjects = subjects[lengths(inputs$reference_images) == 0L &
+                                  lengths(inputs$background_images) == 0L]
+  )
+  check_run_destination <- function(subject, focal) {
+    run_dir <- file.path(output_dir, ftq_sanitize_label(subject), ftq_sanitize_label(focal))
+    paths <- planned_paths[startsWith(planned_paths, paste0(run_dir, "/"))]
+    ftq_check_output_destinations(paths, overwrite)
   }
-  ftq_write_output_guide(output_dir)
-  persist_index()
-
-  for (subject in subjects) {
-    if (isTRUE(verbose)) message("\nPreparing ", subject)
+  check_destination <- function() {
+    ftq_check_windows_output_paths(planned_paths, output_dir)
+    ftq_check_output_destinations(c(index_csv, prepared_csv, report_index), overwrite)
+    if (isTRUE(overwrite) && file.exists(index_csv)) {
+      old_pages <- list.files(output_dir, pattern = "[.]html$", recursive = TRUE)
+      generated <- grepl("(_report|_target-report|_fig_interactive-3d-qc)[.]html$", old_pages) |
+        basename(old_pages) %in% c("fibrtraq-report-index.html", "fibrtraq-report-index-portable.html",
+                                   "OUTPUTS_README.html")
+      if (any(old_pages[generated] != ftq_report_relative_path(report_index, output_dir))) {
+        stop("This results folder contains reports from a different layout. ",
+             "Choose a new output directory to preserve the earlier results.", call. = FALSE)
+      }
+      # A partial index can be resumed with the full set of requested analyses.
+      # Dropping a previously recorded subject or focal region would leave its
+      # old files beside an index that no longer includes them.
+      previous <- utils::read.csv(index_csv, colClasses = "character", check.names = FALSE,
+                                  na.strings = NULL)
+      if (!all(c("subject", "focal_region") %in% names(previous)) ||
+          any(!previous$subject %in% subjects) || any(!previous$focal_region %in% focal_regions)) {
+        stop("The existing run index does not match the requested subjects and focal regions. ",
+             "Choose a new output directory to preserve the earlier results.", call. = FALSE)
+      }
+    }
+  }
+  prepare_subject <- function(subject, prepared_dir) {
     masks <- inputs$region_masks[[subject]]
     template_path <- unname(masks[[1]])
     template <- RNifti::readNifti(template_path, internal = TRUE)
@@ -495,14 +584,10 @@ ftq_run_regional_study <- function(
       ftq_assert_same_grid(
         mask_image,
         template,
-        context = paste0("region_masks[['", subject, "']][['", region, "']]"),
+        context = paste0("region_masks[['", subject, "']][['", region, "']] (", masks[[region]], ")"),
         template_context = paste0("region_masks[['", subject, "']][[1]]")
       )
     }
-
-    subject_dir <- file.path(output_dir, ftq_sanitize_label(subject))
-    prepared_dir <- file.path(subject_dir, "prepared")
-    # Image and union-mask writers create this directory only when needed.
 
     reference_path <- NULL
     reference_source <- inputs$reference_images[[subject]]
@@ -611,7 +696,175 @@ ftq_run_regional_study <- function(
         template_context = paste0("region_masks[['", subject, "']][[1]]")
       )
     }
+    list(reference = reference_path, background = background_path, local = local_path,
+         reheader = subject_reheader)
+  }
+  make_manifest <- function(subject, focal_region, prepared) {
+    masks <- inputs$region_masks[[subject]]
+    run_output_dir <- file.path(output_dir, ftq_sanitize_label(subject), ftq_sanitize_label(focal_region))
+    subject_track_space <- ftq_regional_study_subject_setting(
+      track_space, subject, subjects
+    )
+    subject_discretization <- ftq_regional_study_subject_setting(
+      discretization, subject, subjects
+    )
+    subject_axis_flip <- ftq_regional_study_subject_setting(
+      axis_flip, subject, subjects
+    )
+    if (!is.null(subject_axis_flip)) {
+      subject_axis_flip <- as.logical(unlist(subject_axis_flip, use.names = FALSE))
+      if (length(subject_axis_flip) != 3L || anyNA(subject_axis_flip)) {
+        stop(
+          "axis_flip for subject '", subject,
+          "' must contain exactly three logical values.",
+          call. = FALSE
+        )
+      }
+    }
 
+    list(
+      dataset_root = output_dir,
+      subject = subject,
+      focal_region = focal_region,
+      description = paste0(
+        description, "-", ftq_sanitize_label(focal_region),
+        "-regional-connectivity"
+      ),
+      tractogram = inputs$tractograms[[subject]],
+      fnode = masks[[focal_region]],
+      local = prepared$local,
+      ref_image = prepared$reference,
+      targets = as.list(masks[setdiff(region_labels, focal_region)]),
+      endpoint_contexts = inputs$endpoint_contexts[[subject]],
+      coordinate = list(
+        track_space = subject_track_space,
+        discretization = subject_discretization,
+        axis_flip = if (is.null(subject_axis_flip)) "auto" else
+          as.list(subject_axis_flip)
+      ),
+      analysis = list(
+        focal_assignment_mode = focal_assignment_mode,
+        streamline_voxelization_mode = streamline_voxelization_mode,
+        target_intersection_mode = target_intersection_mode,
+        local_search_radius_mm = local_search_radius_mm,
+        endpoint_analysis = endpoint_analysis
+      ),
+      execution = list(
+        track_reader = track_reader,
+        track_chunk_size = track_chunk_size
+      ),
+      outputs = list(
+        output_dir = run_output_dir,
+        write_maps = isTRUE(write_maps),
+        write_report = isTRUE(write_report),
+        overwrite = isTRUE(overwrite)
+      ),
+      report = list(
+        background_image = prepared$background,
+        context_source = if (is.null(prepared$background)) "auto" else "anatomy"
+      )
+    )
+  }
+
+  if (check_only) {
+    checked <- ftq_check_study_inputs(inputs, focal_regions, output_dir, check_destination,
+                                      prepare_subject, make_manifest, overwrite, check_run_destination)
+    if (isTRUE(verbose)) print(checked)
+    return(invisible(checked))
+  }
+  check_destination()
+  for (subject in subjects) {
+    for (focal in focal_regions) check_run_destination(subject, focal)
+  }
+  dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+  output_dir <- normalizePath(output_dir, mustWork = TRUE)
+
+  replacing_report <- isTRUE(overwrite) && file.exists(report_index)
+  write_report_status <- function(title, detail) {
+    ftq_write_report_page(c(
+      "<!doctype html><html lang='en'><head><meta charset='utf-8'>",
+      '<meta name="fibrtraq-report-layout" content="unified-v1">',
+      paste0("<title>", title, "</title></head><body><main><h1>", title, "</h1>"),
+      paste0("<p>", ftq_report_html_escape(detail), "</p></main></body></html>")
+    ), report_index)
+  }
+  if (replacing_report) {
+    # Invalidate old results before writing even the first CSV checkpoint.
+    # A locked or unwritable page aborts the rerun with its previous files intact.
+    write_report_status("FibrTraQ analysis in progress",
+                        "Reopen this report when the analysis has finished.")
+  }
+
+  prepared_rows <- vector("list", length(subjects))
+  names(prepared_rows) <- subjects
+  run_rows <- vector("list", length(subjects) * length(focal_regions))
+  sections <- vector("list", length(run_rows))
+  run_number <- 0L
+  total_runs <- length(run_rows)
+  # The CSVs are checkpoints. Assemble the HTML once at completion, or when
+  # stopping early, so adding an analysis does not re-render every earlier one.
+  persist_index <- function() {
+    prepared_index <- do.call(rbind, Filter(Negate(is.null), prepared_rows))
+    if (is.null(prepared_index)) prepared_index <- data.frame(subject = character())
+    run_index <- do.call(rbind, Filter(Negate(is.null), run_rows))
+    if (is.null(run_index)) {
+      run_index <- ftq_regional_study_run_row(
+        subject = "", focal_region = "", run = NULL, exploratory = NULL,
+        viewer = NULL, started_at = "", error = NULL
+      )[FALSE, , drop = FALSE]
+    }
+    rownames(prepared_index) <- rownames(run_index) <- NULL
+    utils::write.csv(prepared_index, prepared_csv, row.names = FALSE)
+    utils::write.csv(run_index, index_csv, row.names = FALSE)
+    invisible(list(prepared_inputs = prepared_index, index = run_index))
+  }
+  render_report <- function(index) {
+    dir.create(dirname(report_index), recursive = TRUE, showWarnings = FALSE)
+    tryCatch(
+      ftq_write_unified_report(report_index, output_dir, index,
+                               sections[seq_len(nrow(index))], description,
+                               planned_runs = total_runs),
+      error = function(e) {
+        reason <- paste0("Could not assemble the combined report: ", conditionMessage(e))
+        for (i in seq_len(nrow(index))) {
+          row <- run_rows[[i]]
+          for (stage in c("primary_report", "exploratory_report", "interactive_3d_qc")) {
+            status <- paste0(stage, "_status")
+            if (row[[status]] == "completed") {
+              row[[status]] <- "failed"
+              row[[stage]] <- NA_character_
+              row[[paste0(stage, "_error")]] <- reason
+            }
+          }
+          row$run_status <- "failed"
+          row$error <- paste(c(row$error[nzchar(row$error)], reason), collapse = "\n")
+          run_rows[[i]] <<- row
+        }
+        persist_index()
+        if (replacing_report) {
+          tryCatch(write_report_status("FibrTraQ report generation failed", reason),
+                   error = function(status_error)
+                     warning(conditionMessage(status_error), call. = FALSE))
+        }
+        stop(reason, call. = FALSE)
+      }
+    )
+  }
+  persist_index()
+  # Preserve a readable record even if input preparation or an individual
+  # analysis stops the study. The original error remains the primary diagnosis.
+  render_on_exit <- TRUE
+  on.exit(if (render_on_exit) {
+    tryCatch(render_report(persist_index()$index), error = function(e)
+      warning("Could not save the partial report: ", conditionMessage(e), call. = FALSE))
+  }, add = TRUE)
+
+  for (subject in subjects) {
+    if (isTRUE(verbose)) message("\nPreparing ", subject)
+    subject_dir <- file.path(output_dir, ftq_sanitize_label(subject))
+    prepared <- prepare_subject(subject, file.path(subject_dir, "prepared"))
+    reference_source <- inputs$reference_images[[subject]]
+    background_source <- inputs$background_images[[subject]]
     prepared_rows[[subject]] <- data.frame(
       subject = subject,
       tractogram = inputs$tractograms[[subject]],
@@ -621,12 +874,12 @@ ftq_run_regional_study <- function(
       bvals_source_md5 = ftq_regional_study_checksum(
         ftq_regional_study_bval_source(inputs$bvals[[subject]])
       ),
-      reheadered_to_region_grid = subject_reheader,
-      reference_image = ftq_regional_study_scalar(reference_path),
+      reheadered_to_region_grid = prepared$reheader,
+      reference_image = ftq_regional_study_scalar(prepared$reference),
       background_source = ftq_regional_study_scalar(background_source),
       background_source_md5 = ftq_regional_study_checksum(background_source),
-      background_image = ftq_regional_study_scalar(background_path),
-      local_mask = ftq_regional_study_scalar(local_path),
+      background_image = ftq_regional_study_scalar(prepared$background),
+      local_mask = ftq_regional_study_scalar(prepared$local),
       stringsAsFactors = FALSE
     )
 
@@ -641,70 +894,8 @@ ftq_run_regional_study <- function(
         )
       }
 
-      run_output_dir <- file.path(subject_dir, ftq_sanitize_label(focal_region))
-      subject_track_space <- ftq_regional_study_subject_setting(
-        track_space, subject, subjects
-      )
-      subject_discretization <- ftq_regional_study_subject_setting(
-        discretization, subject, subjects
-      )
-      subject_axis_flip <- ftq_regional_study_subject_setting(
-        axis_flip, subject, subjects
-      )
-      if (!is.null(subject_axis_flip)) {
-        subject_axis_flip <- as.logical(unlist(subject_axis_flip, use.names = FALSE))
-        if (length(subject_axis_flip) != 3L || anyNA(subject_axis_flip)) {
-          stop(
-            "axis_flip for subject '", subject,
-            "' must contain exactly three logical values.",
-            call. = FALSE
-          )
-        }
-      }
-
-      manifest <- list(
-        dataset_root = output_dir,
-        subject = subject,
-        focal_region = focal_region,
-        description = paste0(
-          description, "-", ftq_sanitize_label(focal_region),
-          "-regional-connectivity"
-        ),
-        tractogram = inputs$tractograms[[subject]],
-        fnode = masks[[focal_region]],
-        local = local_path,
-        ref_image = reference_path,
-        targets = as.list(masks[setdiff(region_labels, focal_region)]),
-        endpoint_contexts = inputs$endpoint_contexts[[subject]],
-        coordinate = list(
-          track_space = subject_track_space,
-          discretization = subject_discretization,
-          axis_flip = if (is.null(subject_axis_flip)) "auto" else
-            as.list(subject_axis_flip)
-        ),
-        analysis = list(
-          focal_assignment_mode = focal_assignment_mode,
-          streamline_voxelization_mode = streamline_voxelization_mode,
-          target_intersection_mode = target_intersection_mode,
-          local_search_radius_mm = local_search_radius_mm,
-          endpoint_analysis = endpoint_analysis
-        ),
-        execution = list(
-          track_reader = track_reader,
-          track_chunk_size = track_chunk_size
-        ),
-        outputs = list(
-          output_dir = run_output_dir,
-          write_maps = isTRUE(write_maps),
-          write_report = isTRUE(write_report),
-          overwrite = isTRUE(overwrite)
-        ),
-        report = list(
-          background_image = background_path,
-          context_source = if (is.null(background_path)) "auto" else "anatomy"
-        )
-      )
-
+      manifest <- make_manifest(subject, focal_region, prepared)
+      run_output_dir <- manifest$outputs$output_dir
       started_at <- format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z")
       run <- exploratory <- viewer <- NULL
       stage_errors <- list(analysis = NULL, validation = NULL, primary_report = NULL,
@@ -724,7 +915,8 @@ ftq_run_regional_study <- function(
         backend = backend,
         progress = progress,
         report_slices = report_slices,
-        report_error_action = "return"
+        report_error_action = "return",
+        .report_path = report_index
       ))
       if (!is.null(run)) {
         if (!isTRUE(run$validation$passed)) {
@@ -740,15 +932,16 @@ ftq_run_regional_study <- function(
           exploratory <- capture_stage("exploratory_report", ftq_exploratory_report(
             result_csv = run$outputs$result_csv,
             output_dir = run_output_dir,
-            template_image = masks[[focal_region]],
+            template_image = manifest$fnode,
             prefix = run$manifest$prefix,
             target_labels = run$manifest$target_labels,
-            background_image = background_path,
+            background_image = prepared$background,
             tractogram_context = run$outputs$context,
             overwrite = overwrite,
             assignment_mode = run$manifest$target_intersection_mode,
             search_radius_mm = run$manifest$local_search_radius_mm,
-            report_slices = report_slices
+            report_slices = report_slices,
+            .report_path = report_index
           ))
         }
         if (isTRUE(write_qc_viewer)) {
@@ -756,18 +949,16 @@ ftq_run_regional_study <- function(
             run,
             sample_per_target = sample_per_target,
             overwrite = overwrite,
-            open = FALSE
+            open = FALSE,
+            .scene_file = file.path(run_output_dir, "figures",
+                                    paste0(run$manifest$prefix, "_qc-scene.js"))
           ))
         }
       }
-      if (!is.null(run$report$html) && file.exists(run$report$html)) {
-        capture_stage("primary_report", ftq_report_add_navigation(
-          run$report$html,
-          list("Results index" = report_index,
-               "Target report" = exploratory$html,
-               "3-D QC viewer" = viewer$html)
-        ))
-      }
+      sections[[run_number]] <- list(
+        primary = run$report$html_content, target = exploratory$html_content,
+        viewer = viewer$scene_file, base_dir = run_output_dir
+      )
       failed_stages <- names(stage_errors)[lengths(stage_errors) > 0L]
       stage_labels <- c(analysis = "Analysis", validation = "Computational validation",
                         primary_report = "Main report", exploratory_report = "Target report",
@@ -787,6 +978,7 @@ ftq_run_regional_study <- function(
         error = run_error,
         manifest = manifest,
         stage_errors = stage_errors,
+        report_path = report_index,
         requested = c(primary_report = isTRUE(write_report),
                       exploratory_report = isTRUE(write_exploratory_report),
                       interactive_3d_qc = isTRUE(write_qc_viewer))
@@ -809,6 +1001,8 @@ ftq_run_regional_study <- function(
   saved <- persist_index()
   prepared_index <- saved$prepared_inputs
   run_index <- saved$index
+  render_on_exit <- FALSE
+  render_report(run_index)
 
   out <- structure(
     list(
@@ -821,8 +1015,11 @@ ftq_run_regional_study <- function(
     ),
     class = "ftq_regional_study_result"
   )
+  if (isTRUE(verbose)) {
+    message("Open this report: ", report_index, "\nShare this folder: ", output_dir)
+  }
   if (isTRUE(open)) ftq_qc_open_output(report_index)
-  out
+  invisible(out)
 }
 
 #' @export
@@ -837,8 +1034,8 @@ print.ftq_regional_study_result <- function(x, ...) {
     "  Analyses saved: ", analyses, "\n",
     "  Completed runs: ", completed, "\n",
     "  Failed runs:    ", failed, "\n",
-    "  Output:         ", x$output_dir, "\n",
-    "  Report index:   ", x$report_index, "\n",
+    "Open this report: ", x$report_index, "\n",
+    "Share this folder: ", x$output_dir, "\n",
     sep = ""
   )
   invisible(x)
@@ -850,9 +1047,10 @@ ftq_regional_study_inputs <- function(tractograms,
                                       background_images,
                                       bvals,
                                       local_masks,
-                                      endpoint_contexts) {
+                                      endpoint_contexts,
+                                      must_exist = TRUE) {
   tractograms <- ftq_regional_study_named_paths(
-    tractograms, "tractograms", required_names = NULL
+    tractograms, "tractograms", required_names = NULL, must_exist = must_exist
   )
   subjects <- names(tractograms)
   if (!length(subjects)) {
@@ -872,7 +1070,7 @@ ftq_regional_study_inputs <- function(tractograms,
     ftq_regional_study_named_paths(
       region_masks[[subject]],
       paste0("region_masks[['", subject, "']]"),
-      required_names = NULL
+      required_names = NULL, must_exist = must_exist
     )
   })
   names(region_masks) <- subjects
@@ -896,12 +1094,12 @@ ftq_regional_study_inputs <- function(tractograms,
   region_masks <- lapply(region_masks, function(x) x[region_labels])
 
   reference_images <- ftq_regional_study_optional_subject_paths(
-    reference_images, subjects, "reference_images"
+    reference_images, subjects, "reference_images", must_exist
   )
   background_images <- ftq_regional_study_optional_subject_paths(
-    background_images, subjects, "background_images"
+    background_images, subjects, "background_images", must_exist
   )
-  bvals <- ftq_regional_study_bvals(bvals, subjects)
+  bvals <- ftq_regional_study_bvals(bvals, subjects, must_exist)
 
   if (is.null(local_masks)) {
     local_mode <- "none"
@@ -913,12 +1111,12 @@ ftq_regional_study_inputs <- function(tractograms,
   } else {
     local_mode <- "supplied"
     local_paths <- ftq_regional_study_named_paths(
-      local_masks, "local_masks", required_names = subjects
+      local_masks, "local_masks", required_names = subjects, must_exist = must_exist
     )
     local_masks <- as.list(local_paths[subjects])
   }
 
-  endpoint_contexts <- ftq_regional_study_contexts(endpoint_contexts, subjects)
+  endpoint_contexts <- ftq_regional_study_contexts(endpoint_contexts, subjects, must_exist)
   list(
     subjects = subjects,
     region_labels = region_labels,
@@ -933,7 +1131,11 @@ ftq_regional_study_inputs <- function(tractograms,
   )
 }
 
-ftq_regional_study_named_paths <- function(x, argument, required_names = NULL) {
+ftq_study_input_path <- function(path, must_exist) {
+  if (must_exist) normalizePath(path.expand(path), mustWork = TRUE) else ftq_absolute_output_path(path)
+}
+
+ftq_regional_study_named_paths <- function(x, argument, required_names = NULL, must_exist = TRUE) {
   if (is.list(x)) x <- unlist(x, use.names = TRUE)
   if (!is.character(x) || !length(x) || is.null(names(x)) || anyNA(names(x)) ||
       any(!nzchar(names(x))) || anyDuplicated(names(x))) {
@@ -951,16 +1153,31 @@ ftq_regional_study_named_paths <- function(x, argument, required_names = NULL) {
     if (length(path) != 1L || is.na(path) || !nzchar(path)) {
       stop(argument, " contains an empty or invalid path.", call. = FALSE)
     }
-    normalizePath(path.expand(path), mustWork = TRUE)
+    ftq_study_input_path(path, must_exist)
   }, character(1))
   stats::setNames(unname(paths), names(x))
 }
 
-ftq_regional_study_optional_subject_paths <- function(x, subjects, argument) {
+ftq_regional_study_optional_subject_paths <- function(x, subjects, argument, must_exist = TRUE) {
   out <- stats::setNames(vector("list", length(subjects)), subjects)
   if (is.null(x)) return(out)
+  if (is.list(x)) {
+    if (is.null(names(x)) || anyNA(names(x)) || anyDuplicated(names(x))) {
+      stop(argument, " must be a named list with one entry per subject.", call. = FALSE)
+    }
+    ftq_regional_study_require_subjects(names(x), subjects, argument)
+    for (subject in subjects) {
+      path <- x[[subject]]
+      if (is.null(path)) next
+      if (!is.character(path) || length(path) != 1L || is.na(path) || !nzchar(path)) {
+        stop(argument, "[['", subject, "']] must be one file path or NULL.", call. = FALSE)
+      }
+      out[[subject]] <- ftq_study_input_path(path, must_exist)
+    }
+    return(out)
+  }
   paths <- ftq_regional_study_named_paths(
-    x, argument, required_names = subjects
+    x, argument, required_names = subjects, must_exist = must_exist
   )
   as.list(paths[subjects])
 }
@@ -982,12 +1199,12 @@ ftq_regional_study_require_subjects <- function(actual, expected, argument) {
   invisible(TRUE)
 }
 
-ftq_regional_study_bvals <- function(x, subjects) {
+ftq_regional_study_bvals <- function(x, subjects, must_exist = TRUE) {
   out <- stats::setNames(vector("list", length(subjects)), subjects)
   if (is.null(x)) return(out)
   if (is.character(x) && !is.list(x)) {
     paths <- ftq_regional_study_named_paths(
-      x, "bvals", required_names = subjects
+      x, "bvals", required_names = subjects, must_exist = must_exist
     )
     return(as.list(paths[subjects]))
   }
@@ -1002,7 +1219,7 @@ ftq_regional_study_bvals <- function(x, subjects) {
   for (subject in subjects) {
     value <- x[[subject]]
     if (is.character(value) && length(value) == 1L) {
-      out[[subject]] <- normalizePath(path.expand(value), mustWork = TRUE)
+      out[[subject]] <- ftq_study_input_path(value, must_exist)
     } else if (is.numeric(value)) {
       if (!length(value) || any(!is.finite(value))) {
         stop("bvals[['", subject, "']] contains invalid values.", call. = FALSE)
@@ -1019,7 +1236,7 @@ ftq_regional_study_bvals <- function(x, subjects) {
   out
 }
 
-ftq_regional_study_contexts <- function(x, subjects) {
+ftq_regional_study_contexts <- function(x, subjects, must_exist = TRUE) {
   out <- stats::setNames(vector("list", length(subjects)), subjects)
   if (is.null(x)) return(out)
   if (!is.list(x) || is.null(names(x)) || any(!nzchar(names(x))) ||
@@ -1040,7 +1257,7 @@ ftq_regional_study_contexts <- function(x, subjects) {
     out[[subject]] <- as.list(ftq_regional_study_named_paths(
       x[[subject]],
       paste0("endpoint_contexts[['", subject, "']]"),
-      required_names = NULL
+      required_names = NULL, must_exist = must_exist
     ))
   }
   out
@@ -1265,7 +1482,8 @@ ftq_regional_study_run_row <- function(subject,
                                        error,
                                        manifest = NULL,
                                        stage_errors = list(),
-                                       requested = NULL) {
+                                       requested = NULL,
+                                       report_path = NULL) {
   completed <- !is.null(run)
   roi <- if (completed && is.data.frame(run$roi_summary) &&
              nrow(run$roi_summary)) {
@@ -1337,17 +1555,17 @@ ftq_regional_study_run_row <- function(subject,
       NA_character_
     },
     primary_report = if (completed && !is.null(run$report)) {
-      as.character(value(run$report$html))
+      as.character(value(ftq_value(report_path, run$report$html)))
     } else {
       NA_character_
     },
     exploratory_report = if (!is.null(exploratory)) {
-      as.character(value(exploratory$html))
+      as.character(value(ftq_value(report_path, exploratory$html)))
     } else {
       NA_character_
     },
     interactive_3d_qc = if (!is.null(viewer)) {
-      as.character(value(viewer$html))
+      as.character(value(ftq_value(report_path, viewer$html)))
     } else {
       NA_character_
     },
@@ -1399,6 +1617,16 @@ ftq_regional_study_run_row <- function(subject,
   )
 }
 
+ftq_study_report_path <- function(output_dir, subjects, focal_regions, description) {
+  if (length(subjects) * length(focal_regions) > 1L) {
+    return(file.path(output_dir, "fibrtraq-report-index.html"))
+  }
+  subject <- ftq_sanitize_label(subjects[[1L]])
+  focal <- ftq_sanitize_label(focal_regions[[1L]])
+  prefix <- ftq_prefix(subject, desc = paste0(description, "-", focal, "-regional-connectivity"))
+  file.path(output_dir, subject, focal, paste0(prefix, "_report.html"))
+}
+
 ftq_regional_study_check_labels <- function(labels, context, reserved = character()) {
   safe <- ftq_sanitize_label(labels)
   # A bundle must remain unambiguous on case-insensitive Windows/macOS volumes.
@@ -1412,186 +1640,4 @@ ftq_regional_study_check_labels <- function(labels, context, reserved = characte
          "Windows device names or trailing periods).", call. = FALSE)
   }
   invisible(safe)
-}
-
-ftq_write_regional_study_index <- function(run_index,
-                                           path,
-                                           output_dir,
-                                           description,
-                                           example_validation = NULL) {
-  esc <- function(x) {
-    x <- as.character(x)
-    x[is.na(x)] <- "unavailable"
-    x <- gsub("&", "&amp;", x, fixed = TRUE)
-    x <- gsub("<", "&lt;", x, fixed = TRUE)
-    x <- gsub(">", "&gt;", x, fixed = TRUE)
-    x <- gsub("\"", "&quot;", x, fixed = TRUE)
-    gsub("'", "&#39;", x, fixed = TRUE)
-  }
-  field <- function(row, name, default = "unavailable") {
-    x <- row[[name]]
-    if (is.null(x) || !length(x) || is.na(x[1L]) || !nzchar(as.character(x[1L]))) {
-      return(default)
-    }
-    as.character(x[1L])
-  }
-  link <- function(target, label) {
-    if (!length(target) || is.na(target) || !nzchar(target)) return("")
-    href <- ftq_report_href(target, dirname(ftq_report_normalize_path(path)))
-    paste0("<a href='", esc(href), "'>", esc(label), "</a>")
-  }
-  mode_text <- function(row) {
-    mode <- field(row, "target_intersection_mode", "not recorded")
-    labels <- c(full_streamline = "Full streamline", endpoint_voxels = "Endpoint voxels",
-                local_search = "Local search")
-    text <- if (mode %in% names(labels)) paste0(labels[[mode]], " (", mode, ")") else mode
-    if (identical(mode, "local_search")) {
-      radius <- suppressWarnings(as.numeric(field(row, "local_search_radius_mm", NA_character_)))
-      text <- paste0(text, "; radius ", if (is.finite(radius))
-        paste0(format(radius, trim = TRUE), " mm") else "unavailable")
-    }
-    allocation <- field(row, "focal_assignment_mode", "")
-    if (nzchar(allocation)) text <- paste0(text, "; focal allocation: ", allocation)
-    text
-  }
-  modes <- vapply(seq_len(nrow(run_index)), function(i) mode_text(run_index[i, , drop = FALSE]),
-                  character(1))
-  shared_mode <- length(unique(modes)) == 1L
-  download_labels <- c(
-    result_csv = "Complete per-voxel data (CSV)",
-    voxel_data_csv = "Complete per-voxel data with coordinates (CSV)",
-    rsc_csv = "Complete RSC summary (CSV)",
-    fate_csv = "Voxel-weighted fate (CSV)",
-    roi_summary_csv = "Detailed run summary and unique-streamline fate (CSV)",
-    endpoint_summary_csv = "Endpoint assignment audit (CSV)",
-    endpoint_penetration_csv = "Target penetration (CSV)",
-    endpoint_context_csv = "Endpoint coverage (CSV)",
-    local_search_assignments_csv = "Local-search assignments (CSV)",
-    metadata_json = "Methods and provenance (JSON)",
-    validation_json = "Computational validation (JSON)"
-  )
-  rows <- vapply(seq_len(nrow(run_index)), function(i) {
-    row <- run_index[i, , drop = FALSE]
-    legacy_completed <- identical(field(row, "run_status"), "completed")
-    analysis <- field(row, "analysis_status", if (legacy_completed) "completed" else "unavailable")
-    validation <- field(row, "validation_status", if (isTRUE(row$validation_passed)) "passed" else "not passed")
-    primary <- field(row, "primary_report", "")
-    action <- if (nzchar(primary)) link(primary, "Results") else paste0(
-      "<a href='#run-", i, "'>Results and available files</a>"
-    )
-    auxiliary <- c(link(field(row, "exploratory_report", ""), "Target report"),
-                   link(field(row, "interactive_3d_qc", ""), "3D QC"))
-    auxiliary <- auxiliary[nzchar(auxiliary)]
-    downloads <- vapply(names(download_labels), function(name) {
-      target <- field(row, name, "")
-      if (!nzchar(target)) return("")
-      # Historical summary CSVs can contain original absolute paths after a
-      # move. Do not advertise stale download links; repaired reports remain.
-      if (!file.exists(target)) return("")
-      paste0("<li>", link(target, download_labels[[name]]), "</li>")
-    }, character(1))
-    status_fields <- c(primary_report = "Main report", exploratory_report = "Target report",
-                       interactive_3d_qc = "3D QC")
-    presentation <- vapply(names(status_fields), function(name) {
-      status <- field(row, paste0(name, "_status"), "")
-      if (!nzchar(status)) return("")
-      paste0(esc(status_fields[[name]]), ": ", esc(gsub("_", " ", status, fixed = TRUE)))
-    }, character(1))
-    presentation <- presentation[nzchar(presentation)]
-    error <- field(row, "error", "")
-    detail <- paste0(
-      "<details id='run-", i, "'", if (nzchar(error) || !nzchar(primary)) " open" else "", ">",
-      "<summary>Supporting views, downloads and status</summary>",
-      if (length(presentation)) paste0("<p>", paste(presentation, collapse = "; "), ".</p>") else "",
-      if (length(auxiliary)) paste0("<p>", paste(auxiliary, collapse = " &middot; "), "</p>") else "",
-      if (any(nzchar(downloads))) paste0("<ul>", paste(downloads, collapse = ""), "</ul>") else
-        "<p class='muted'>No additional data links are available in this index.</p>",
-      "</details>"
-    )
-    paste0(
-      "<tr><th scope='row'>", esc(row$subject), "</th><td>", esc(row$focal_region), "</td>",
-      "<td class='", if (analysis == "completed") "pass" else "fail", "'>", esc(analysis), "</td>",
-      "<td class='", if (validation == "passed") "pass" else "fail", "'>", esc(validation), "</td>",
-      "<td>", esc(gsub("_", " ", field(row, "biological_qc_status"), fixed = TRUE)), "</td>",
-      if (!shared_mode) paste0("<td>", esc(modes[[i]]), "</td>") else "",
-      "<td>", action, detail, "</td></tr>",
-      if (nzchar(error)) paste0("<tr><td colspan='", if (shared_mode) 6L else 7L,
-        "' class='fail'>Attention: ", esc(error), "</td></tr>") else ""
-    )
-  }, character(1))
-  title <- if (nrow(run_index) == 1L) {
-    paste0("FibrTraQ Results: ", run_index$subject[[1L]], " / ", run_index$focal_region[[1L]])
-  } else "FibrTraQ Results"
-  guide <- ftq_write_output_guide(output_dir)
-  root_files <- c("fibrtraq-run-index.csv" = "Run index (CSV)",
-                  "fibrtraq-prepared-inputs.csv" = "Prepared-input provenance (CSV)")
-  root_links <- vapply(names(root_files), function(name) {
-    target <- file.path(output_dir, name)
-    if (file.exists(target)) link(target, root_files[[name]]) else ""
-  }, character(1))
-  root_links <- c(root_links[nzchar(root_links)],
-                  link(guide, "Output definitions and guide"))
-  example <- character()
-  if (!is.null(example_validation)) {
-    counts <- function(x) paste0(sum(x$passed, na.rm = TRUE), "/", nrow(x))
-    checked <- isTRUE(example_validation$package_validation_passed) &&
-      nrow(example_validation$tables) > 0L && nrow(example_validation$claims) > 0L &&
-      isTRUE(all(example_validation$tables$passed)) && isTRUE(all(example_validation$claims$passed))
-    example <- c(
-      "<section><h2>Bundled example verification</h2>",
-      paste0("<p class='", if (checked) "pass" else "fail", "'>Known-answer comparisons: ",
-        counts(example_validation$tables), " tables and ", counts(example_validation$claims),
-        " claims passed. Computational validation: ",
-        if (isTRUE(example_validation$package_validation_passed)) "passed" else "not passed", ".</p>"),
-      paste0("<p>Generated HTML files present and nonempty: ", counts(example_validation$reports),
-        ". This checks file generation; browser rendering and interactive behavior require separate review.</p>"),
-      "<details><summary>Example comparison details</summary>"
-    )
-    for (family in c("tables", "claims", "reports")) {
-      checks <- example_validation[[family]]
-      label <- if (family == "claims") checks$claim else checks$artifact
-      example <- c(example, paste0("<h3>", esc(family), "</h3><ul>"),
-        vapply(seq_len(nrow(checks)), function(i) paste0("<li>", esc(label[[i]]), ": ",
-          if (isTRUE(checks$passed[[i]])) "passed" else "FAILED", " \u2014 ",
-          esc(checks$details[[i]]), "</li>"), character(1)), "</ul>")
-    }
-    example <- c(example, "</details></section>")
-  }
-  html <- c(
-    "<!doctype html><html lang='en'><head><meta charset='utf-8'>",
-    "<meta name='viewport' content='width=device-width,initial-scale=1'>",
-    paste0("<title>", esc(title), "</title>"),
-    paste0("<style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;",
-      "max-width:1200px;margin:32px auto;padding:0 20px;color:#1f2933;line-height:1.5;overflow-wrap:anywhere}",
-      ".table-scroll{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}",
-      ".table-scroll:focus{outline:2px solid #2563eb;outline-offset:2px}",
-      "table{border-collapse:collapse;width:100%;min-width:700px}",
-      "th,td{border:1px solid #d8dee4;padding:10px;text-align:left;vertical-align:top}",
-      "thead th{background:#f3f4f6}tbody th{font-weight:600}.pass{color:#176b35}",
-      ".fail{color:#9f1239;font-weight:700}.muted{color:#596579}a{color:#175db0}",
-      "details{margin-top:10px}summary{cursor:pointer}ul{padding-left:20px}",
-      "@media(max-width:700px){body{margin:16px 0;padding:0 12px}h1{font-size:1.6rem}",
-      "th,td{padding:6px 8px;font-size:.9rem}}</style></head><body>"),
-    paste0("<h1>", esc(title), "</h1>"),
-    paste0("<p>", nrow(run_index), if (nrow(run_index) == 1L) " run recorded. " else " runs recorded. ",
-      sum(run_index$validation_passed, na.rm = TRUE), " passed computational validation.</p>"),
-    if (!nrow(run_index)) "<p>Inputs are being prepared; no analysis run has finished yet.</p>" else "",
-    if (shared_mode) paste0("<p><strong>Method:</strong> ", esc(modes[[1L]]), ".</p>") else "",
-    "<p>Computational validation checks numerical consistency. Biological QC is a separate review of anatomical context and alignment; unavailable or unreviewed QC is not evidence of anatomical validity.</p>",
-    example,
-    "<div class='table-scroll' role='region' tabindex='0'>",
-    "<table><thead><tr><th>Subject</th><th>Focal region</th><th>Analysis</th><th>Validation</th><th>Biological QC</th>",
-    if (!shared_mode) "<th>Method</th>" else "",
-    "<th>Results</th></tr></thead><tbody>", rows, "</tbody></table></div>",
-    if (length(root_links)) paste0("<h2>Files and definitions</h2><p>",
-      paste(root_links, collapse = " &middot; "), "</p>") else "",
-    "<p class='muted'>Preparation records retain optional inputs as unavailable when none were supplied. A missing optional reference or b-value file is not an analysis failure. Keep the complete results folder together and extract it before opening the HTML.</p>",
-    "</body></html>"
-  )
-  writeLines(enc2utf8(html), path, useBytes = TRUE)
-  invisible(path)
-}
-
-ftq_regional_study_relative_path <- function(path, root) {
-  ftq_report_relative_path(path, root)
 }

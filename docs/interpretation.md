@@ -33,8 +33,9 @@ multiple focal voxels. Therefore:
 - unique focal and target-positive streamline totals should be read from the
   ROI-summary and target-summary outputs.
 
-`ftq_target_summary_tables()` keeps unique-streamline and voxel-association
-estimands in separate, explicitly labeled tables.
+In a `*_per-voxel-hits_target-<label>.nii.gz` map, the intensity at a focal voxel is the number of distinct qualifying streamlines assigned to **both** that voxel and the named target. With `full_streamline` assignment, a streamline qualifies when its selected path also enters the target. Revisits to the focal voxel or target add no extra count. A streamline can contribute once to each of several focal voxels and to each of several target maps. Outside the focal mask the map is zero.
+
+The default `sample_points` rule uses the stored streamline vertices. A segment can cross a voxel between vertices without producing a hit. `segment_interpolation` adds samples along each segment. The `discretization` setting then determines which grid voxels represent those coordinates. With `"any"`, FibrTraQ tries rounding, flooring and ceiling in order and uses the first method that places the streamline in the focal ROI. It does not pool hits from the three methods.
 
 ## Target-assignment modes
 
@@ -52,10 +53,7 @@ classification:
 For `"local_search"`, distances are scanner-space Euclidean distances in
 millimetres from the continuous endpoint coordinate to voxel centres, and the
 radius is inclusive. The default is 2 mm. This mode therefore requires
-trustworthy voxel-to-scanner geometry; direct `FibrTraQ()` callers using plain
-arrays must supply `ref_image`. Dimensions are checked, but the caller must
-establish that it is the exact `fNode` grid because the focal array has no
-affine metadata.
+trustworthy voxel-to-scanner geometry.
 NIfTI metre and micrometre spatial units are converted to millimetres. When
 the header reports unknown spatial units, FibrTraQ assumes millimetres, emits
 a warning, and records that assumption in preflight and result provenance. If
@@ -67,9 +65,7 @@ recorded. Multiple equally near voxels carrying the same label remain one
 unambiguous label assignment.
 
 For a local-search run, FibrTraQ also writes a dedicated
-`*_fibrtraq_local-search-assignments.csv` audit. Use
-`ftq_local_search_tables(result)` to retrieve its streamline-level rows and
-summaries in memory. The audit partitions each assigned cNode connection into:
+`*_fibrtraq_local-search-assignments.csv` audit in the `tables/` folder. The audit partitions each assigned cNode connection into:
 
 - **also intersects cNode**, where the selected voxelized path enters the
   assigned target mask; and
@@ -91,7 +87,7 @@ in provenance and method comparisons.
 Paper-aligned aliases are normalized in saved provenance:
 `"all_voxel"` and `"all_voxels"` map to `"full_streamline"`; `"end_voxel"`,
 `"end_voxels"`, and `"endpoint_voxel"` map to `"endpoint_voxels"`. Prefer the
-canonical values in new manifests.
+canonical values in new analyses.
 
 These choices correspond to the broad assignment strategies compared by
 [Yeh et al. (2019)](https://doi.org/10.1016/j.neuroimage.2019.05.005).
@@ -103,8 +99,7 @@ described as an exact reproduction of the paper's RC3 implementation.
 
 Changing target assignment does not change which streamlines qualify through
 the focal path or how qualifying streamlines are allocated to focal voxels.
-Those established semantics remain centralized in `FibrTraQ()`, including
-`focal_assignment_mode` and `streamline_voxelization_mode`. The default
+Both workflows use `focal_assignment_mode` and `streamline_voxelization_mode` to control voxel allocation. The default
 `"full_streamline"` preserves established counting behavior and the primary
 result-table schema.
 

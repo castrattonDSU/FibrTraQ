@@ -79,7 +79,7 @@ ftq_regional_study_fixture <- function(root) {
   )
 }
 
-test_that("regional study runner produces the complete report set", {
+test_that("regional study writes one report with distinct results for two synthetic subjects", {
   skip_if_not_installed("RNifti")
   skip_if_not_installed("freesurferformats")
 
@@ -87,12 +87,15 @@ test_that("regional study runner produces the complete report set", {
     file.path(tempdir(), "regional-study-complete-fixture")
   )
   output_dir <- file.path(tempdir(), "regional-output")
-  result <- ftq_run_regional_study(
-    tractograms = c(subject1 = fixture$tractogram),
-    region_masks = list(subject1 = fixture$masks),
+  result <- fibrtraq_study(
+    tractograms = c(subject1 = fixture$tractogram, subject2 = fixture$tractogram),
+    region_masks = list(subject1 = fixture$masks,
+                        subject2 = setNames(rev(fixture$masks), names(fixture$masks))),
     output_dir = output_dir,
-    reference_images = c(subject1 = fixture$reference),
-    bvals = c(subject1 = fixture$bvals),
+    focal_regions = "A",
+    reference_images = c(subject1 = fixture$reference, subject2 = fixture$reference),
+    bvals = c(subject1 = fixture$bvals, subject2 = fixture$bvals),
+    local_masks = "union",
     description = "integration-test",
     track_space = "voxel",
     discretization = "round",
@@ -107,7 +110,14 @@ test_that("regional study runner produces the complete report set", {
 
   expect_s3_class(result, "ftq_regional_study_result")
   expect_equal(nrow(result$index), 2L)
-  expect_setequal(result$index$focal_region, c("A", "B"))
+  expect_identical(result$index$subject, c("subject1", "subject2"))
+  expect_identical(result$index$focal_region, c("A", "A"))
+  # The second subject uses the other fixture mask as focal, so linking either
+  # subject to the first subject's tables would return the wrong counts.
+  hits <- vapply(result$index$roi_summary_csv, function(path) {
+    utils::read.csv(path)$unique_focal_intersecting_streamlines
+  }, numeric(1), USE.NAMES = FALSE)
+  expect_equal(hits, c(2, 1))
   expect_true(all(result$index$run_status == "completed"))
   expect_true(all(result$index$validation_passed))
   expect_true(all(file.exists(result$index$primary_report)))
@@ -116,15 +126,20 @@ test_that("regional study runner produces the complete report set", {
   expect_true(all(file.exists(result$index$endpoint_summary_csv)))
   expect_true(file.exists(result$index_csv))
   expect_true(file.exists(result$prepared_inputs_csv))
-  expect_true(file.exists(result$report_index))
+  expect_identical(normalizePath(result$report_index), normalizePath(file.path(output_dir, "fibrtraq-report-index.html")))
+  expect_length(list.files(output_dir, "[.]html$", recursive = TRUE), 1L)
   for (i in seq_len(nrow(result$index))) {
-    focal_dir <- file.path(output_dir, "subject1", result$index$focal_region[i])
-    expect_identical(normalizePath(dirname(result$index$exploratory_report[i])),
-                     normalizePath(file.path(focal_dir, "figures")))
-    expect_match(basename(result$index$exploratory_report[i]), "_fibrtraq_target-report.html$", perl = TRUE)
+    focal_dir <- file.path(output_dir, result$index$subject[i], result$index$focal_region[i])
+    expect_identical(result$index$primary_report[i], result$report_index)
+    expect_identical(result$index$exploratory_report[i], result$report_index)
+    expect_identical(result$index$interactive_3d_qc[i], result$report_index)
+    expect_false(dir.exists(file.path(focal_dir, "reports")))
     expect_false(dir.exists(file.path(focal_dir, "exploratory-report")))
-    expect_length(list.files(focal_dir, pattern = "_exploratory-primary-target-lut[.]csv$"), 1L)
-    expect_length(list.files(file.path(focal_dir, "figures"), pattern = "[.]png$"), 5L)
+    expect_length(list.files(focal_dir, "[.]csv$"), 0L)
+    expect_length(list.files(file.path(focal_dir, "tables"), "_exploratory-primary-target-lut[.]csv$"), 1L)
+    expect_length(list.files(file.path(focal_dir, "figures"), "[.]png$"), 15L)
+    expect_length(list.files(file.path(focal_dir, "figures"), "_qc-scene[.]js$"), 1L)
+    expect_length(list.files(file.path(focal_dir, "maps"), "_local-fraction(-valid)?[.]nii[.]gz$"), 0L)
   }
 
   prepared <- result$prepared_inputs[1, ]
@@ -142,14 +157,12 @@ test_that("regional study runner produces the complete report set", {
   )
 
   index_html <- paste(readLines(result$report_index, warn = FALSE), collapse = "\n")
-  expect_match(index_html, ">Results</a>", fixed = TRUE)
-  expect_match(index_html, "Target report", fixed = TRUE)
-  expect_match(index_html, "3D QC", fixed = TRUE)
-  expect_match(
-    index_html,
-    "<div class='table-scroll' role='region' tabindex='0'>",
-    fixed = TRUE
-  )
+  expect_match(index_html, "subject1/A/tables/", fixed = TRUE)
+  expect_match(index_html, "subject2/A/tables/", fixed = TRUE)
+  expect_match(index_html, "id=['\"]ftq-run['\"]")
+  expect_match(index_html, "id=['\"]ftq-primary['\"]")
+  expect_match(index_html, "id=['\"]ftq-targets['\"]")
+  expect_match(index_html, "id=['\"]ftq-open-viewer['\"]")
 })
 
 test_that("standard runs omit unused preparation and context folders but retain density provenance", {
@@ -159,7 +172,7 @@ test_that("standard runs omit unused preparation and context folders but retain 
   on.exit(unlink(root, recursive = TRUE), add = TRUE)
   fixture <- ftq_regional_study_fixture(file.path(root, "inputs"))
   output_dir <- file.path(root, "results")
-  result <- ftq_run_files(
+  result <- fibrtraq_single(
     tractogram = fixture$tractogram,
     focal_mask = fixture$masks[["A"]],
     target_masks = fixture$masks["B"],
@@ -193,7 +206,7 @@ test_that("aligned existing images and supplied local masks do not create prepar
   on.exit(unlink(root, recursive = TRUE), add = TRUE)
   fixture <- ftq_regional_study_fixture(file.path(root, "inputs"))
   output_dir <- file.path(root, "results")
-  result <- ftq_run_files(
+  result <- fibrtraq_single(
     tractogram = fixture$tractogram,
     focal_mask = fixture$masks[["A"]], target_masks = fixture$masks["B"],
     reference_image = fixture$masks[["A"]], local_mask = fixture$masks[["A"]],
@@ -216,7 +229,7 @@ test_that("file runner provides the complete single-analysis workflow", {
     file.path(tempdir(), "file-run-complete-fixture")
   )
   output_dir <- file.path(tempdir(), "file-run-complete-output")
-  result <- ftq_run_files(
+  result <- fibrtraq_single(
     tractogram = fixture$tractogram,
     focal_mask = fixture$masks[["A"]],
     target_masks = fixture$masks["B"],
@@ -241,6 +254,10 @@ test_that("file runner provides the complete single-analysis workflow", {
   expect_equal(nrow(result$index), 1L)
   expect_equal(result$index$subject, "subject1")
   expect_equal(result$index$focal_region, "A")
+  expect_length(list.files(output_dir, "[.]html$", recursive = TRUE), 1L)
+  expect_identical(normalizePath(dirname(result$report_index)),
+                   normalizePath(file.path(output_dir, "subject1", "A")))
+  expect_length(list.files(output_dir, "^OUTPUTS_README", recursive = TRUE), 0L)
   expect_equal(result$index$run_status, "completed")
   expect_true(result$index$validation_passed)
   expect_true(file.exists(result$index$primary_report))
@@ -255,7 +272,7 @@ test_that("file runner requires named target masks", {
     file.path(tempdir(), "file-run-target-label-fixture")
   )
   expect_error(
-    ftq_run_files(
+    fibrtraq_single(
       tractogram = fixture$tractogram,
       focal_mask = fixture$masks[["A"]],
       target_masks = unname(fixture$masks["B"]),
@@ -278,7 +295,7 @@ test_that("regional study runner requires b-values for a 4-D reference", {
     file.path(tempdir(), "regional-study-missing-bvals-fixture")
   )
   expect_error(
-    ftq_run_regional_study(
+    fibrtraq_study(
       tractograms = c(subject1 = fixture$tractogram),
       region_masks = list(subject1 = fixture$masks),
       output_dir = file.path(tempdir(), "regional-study-missing-bvals-output"),
@@ -337,7 +354,7 @@ test_that("regional study runner makes affine reheadering explicit", {
   )
   expect_error(
     do.call(
-      ftq_run_regional_study,
+      fibrtraq_study,
       c(
         common_args,
         list(output_dir = file.path(tempdir(), "regional-study-affine-rejected"))
@@ -348,7 +365,7 @@ test_that("regional study runner makes affine reheadering explicit", {
   )
 
   accepted <- do.call(
-    ftq_run_regional_study,
+    fibrtraq_study,
     c(
       common_args,
       list(
@@ -363,7 +380,7 @@ test_that("regional study runner makes affine reheadering explicit", {
     internal = TRUE
   )
   mask <- RNifti::readNifti(fixture$masks[["A"]], internal = TRUE)
-  expect_true(FibrTraQ:::ftq_same_grid(prepared, mask))
+  expect_true(ftq_assert_same_grid(prepared, mask))
   provenance <- utils::read.csv(sub(
     "\\.nii\\.gz$",
     "-volumes.csv",
@@ -389,7 +406,7 @@ test_that("file runner reheaders 3-D images fully to the regional grid", {
   RNifti::sform(reference) <- source_affine
   RNifti::writeNifti(reference, reference_path)
 
-  result <- ftq_run_files(
+  result <- fibrtraq_single(
     tractogram = fixture$tractogram,
     focal_mask = fixture$masks[["A"]],
     target_masks = fixture$masks["B"],
@@ -417,7 +434,7 @@ test_that("file runner reheaders 3-D images fully to the regional grid", {
     internal = TRUE
   )
   mask <- RNifti::readNifti(fixture$masks[["A"]], internal = TRUE)
-  expect_true(FibrTraQ:::ftq_same_grid(prepared, mask))
+  expect_true(ftq_assert_same_grid(prepared, mask))
   expect_equal(as.character(RNifti::pixunits(prepared))[[1L]], "mm")
   expect_identical(
     as.numeric(RNifti::readNifti(
@@ -465,13 +482,14 @@ test_that("presentation failures preserve completed data and independent stage s
     },
     ftq_exploratory_report = function(...) stop("exploratory failed"),
     ftq_interactive_qc_viewer = function(run, ...) {
-      html <- file.path(dirname(run$outputs$result_csv), "viewer.html")
-      writeLines("<!doctype html><title>Viewer</title>", html)
-      list(html = html)
+      scene <- file.path(dirname(run$outputs$result_csv), "figures", "test_qc-scene.js")
+      dir.create(dirname(scene), showWarnings = FALSE)
+      writeLines('document.currentScript.ftqScene = {};', scene)
+      list(scene_file = scene)
     },
     .package = "FibrTraQ"
   )
-  result <- do.call(ftq_run_regional_study,
+  result <- do.call(fibrtraq_study,
                    ftq_public_regional_args(fixture, output_dir, continue_on_error = TRUE))
   row <- result$index[1L, ]
   expect_equal(analyses, 1L)
@@ -489,15 +507,16 @@ test_that("presentation failures preserve completed data and independent stage s
   expect_true(file.exists(row$interactive_3d_qc))
   expect_match(row$primary_report_error, "figure generation failed", fixed = TRUE)
   html <- paste(readLines(result$report_index), collapse = "\n")
-  expect_match(html, "Complete per-voxel data (CSV)", fixed = TRUE)
+  expect_match(html, "href='complete-data.csv'", fixed = TRUE)
+  expect_match(html, "Per-voxel data", fixed = TRUE)
   expect_match(html, "figure generation failed", fixed = TRUE)
   expect_match(html, "exploratory failed", fixed = TRUE)
   expect_match(html, "3D QC", fixed = TRUE)
-  expect_match(html, "FibrTraQ Results: 001 / A", fixed = TRUE)
+  expect_match(html, ">001 / A</h1>", fixed = TRUE)
   expect_false(grepl("Regional Study", html, fixed = TRUE))
 
   stopped_dir <- tempfile("public-report-default-stop-")
-  expect_error(do.call(ftq_run_regional_study,
+  expect_error(do.call(fibrtraq_study,
                       ftq_public_regional_args(fixture, stopped_dir)),
                "figure generation failed", fixed = TRUE)
   saved <- read.csv(file.path(stopped_dir, "fibrtraq-run-index.csv"),
@@ -505,7 +524,7 @@ test_that("presentation failures preserve completed data and independent stage s
   expect_identical(saved$analysis_status, "completed")
   expect_true(saved$validation_passed)
   expect_true(file.exists(saved$result_csv))
-  expect_true(file.exists(file.path(stopped_dir, "fibrtraq-report-index.html")))
+  expect_length(list.files(file.path(stopped_dir, "001", "A"), "_report[.]html$"), 1L)
 })
 
 test_that("default stop persists failed run and earlier completed run in navigable index", {
@@ -527,7 +546,7 @@ test_that("default stop persists failed run and earlier completed run in navigab
   args <- ftq_public_regional_args(fixture, output_dir)
   args$focal_regions <- c("A", "B")
   args$write_report <- args$write_exploratory_report <- args$write_qc_viewer <- FALSE
-  expect_error(do.call(ftq_run_regional_study, args), "counting failed", fixed = TRUE)
+  expect_error(do.call(fibrtraq_study, args), "counting failed", fixed = TRUE)
   csv <- file.path(output_dir, "fibrtraq-run-index.csv")
   html <- file.path(output_dir, "fibrtraq-report-index.html")
   expect_true(file.exists(csv))
@@ -542,6 +561,118 @@ test_that("default stop persists failed run and earlier completed run in navigab
   text <- paste(readLines(html), collapse = "\n")
   expect_match(text, "complete-data.csv", fixed = TRUE)
   expect_match(text, "counting failed", fixed = TRUE)
+})
+
+test_that("a failed final report assembly retains validated results and clears report links", {
+  fixture <- ftq_regional_study_fixture(tempfile("assembly-fixture-"))
+  root <- tempfile("assembly-results-")
+  args <- ftq_public_regional_args(fixture, root)
+  args$write_exploratory_report <- FALSE
+  args$write_qc_viewer <- FALSE
+  testthat::local_mocked_bindings(
+    ftq_write_unified_report = function(...) stop("simulated write failure"),
+    .package = "FibrTraQ"
+  )
+  expect_error(do.call(fibrtraq_study, args), "simulated write failure")
+  row <- utils::read.csv(file.path(root, "fibrtraq-run-index.csv"))
+  expect_identical(row$run_status, "failed")
+  expect_identical(row$analysis_status, "completed")
+  expect_identical(row$validation_status, "passed")
+  expect_true(file.exists(row$result_csv))
+  expect_true(row$validation_passed)
+  expect_identical(row$primary_report_status, "failed")
+  expect_identical(row$exploratory_report_status, "not_requested")
+  expect_identical(row$interactive_3d_qc_status, "not_requested")
+  expect_match(row$primary_report_error, "simulated write failure")
+  expect_true(is.na(row$primary_report))
+  expect_length(list.files(root, pattern = "[.]html$", recursive = TRUE), 0L)
+})
+
+test_that("an overwrite cannot present old results while writing a new analysis", {
+  fixture <- ftq_regional_study_fixture(tempfile("rf"))
+  args <- ftq_public_regional_args(fixture, tempfile("rr"))
+  args$write_exploratory_report <- args$write_qc_viewer <- FALSE
+  prior <- do.call(fibrtraq_study, args)
+  page <- prior$report_index
+  expect_identical(prior$index$run_status, "completed")
+  expect_match(paste(readLines(page), collapse = "\n"), "ftq-primary", fixed = TRUE)
+  saved <- c(page, prior$index_csv, prior$index$result_csv)
+  hashes <- tools::md5sum(saved)
+
+  # If the canonical page is locked, the previous run must stay intact.
+  testthat::with_mocked_bindings(
+    expect_error(do.call(fibrtraq_study, args), "report locked"),
+    ftq_write_report_page = function(...) stop("report locked"), .package = "FibrTraQ"
+  )
+  expect_identical(tools::md5sum(saved), hashes)
+
+  replacement <- tempfile("rt", fileext = ".trk")
+  ftq_write_regional_study_test_trk(replacement, list(rbind(c(2, 2, 2), c(4, 2, 2))))
+  args$tractograms[[1L]] <- replacement
+  original_run <- FibrTraQ:::ftq_run
+  seen_during_run <- NULL
+  testthat::local_mocked_bindings(
+    ftq_run = function(...) {
+      seen_during_run <<- paste(readLines(page), collapse = "\n")
+      original_run(...)
+    },
+    ftq_write_unified_report = function(...) stop("assembly interrupted"),
+    .package = "FibrTraQ"
+  )
+  expect_error(do.call(fibrtraq_study, args), "assembly interrupted")
+  expect_match(seen_during_run, "analysis in progress", fixed = TRUE)
+  expect_false(grepl("ftq-primary|href=", seen_during_run))
+  failed <- paste(readLines(page), collapse = "\n")
+  expect_match(failed, "report generation failed", fixed = TRUE)
+  expect_match(failed, "assembly interrupted", fixed = TRUE)
+  expect_false(grepl("ftq-primary|href=", failed))
+  row <- utils::read.csv(prior$index_csv)
+  expect_true(is.na(row$primary_report))
+  expect_identical(row$run_status, "failed")
+  expect_identical(row$validation_status, "passed")
+  expect_equal(row$processed_streamlines, 1L)
+  expect_equal(utils::read.csv(row$roi_summary_csv)$processed_streamlines, 1L)
+  expect_equal(prior$index$processed_streamlines, 2L)
+})
+
+test_that("a cohort overwrite preserves excluded analyses and accepts a partial index", {
+  fixture <- ftq_regional_study_fixture(tempfile("cf"))
+  args <- ftq_public_regional_args(fixture, tempfile("cr"))
+  args$write_report <- args$write_exploratory_report <- args$write_qc_viewer <- FALSE
+  args$tractograms <- c(`001` = fixture$tractogram, `002` = fixture$tractogram)
+  args$region_masks <- list(`001` = fixture$masks, `002` = fixture$masks)
+  prior <- do.call(fibrtraq_study, args)
+  saved <- c(prior$report_index, prior$index_csv, prior$index$result_csv)
+  hashes <- tools::md5sum(saved)
+
+  different <- args
+  names(different$tractograms)[2] <- names(different$region_masks)[2] <- "003"
+  expect_error(do.call(fibrtraq_study, different), "new output directory")
+  different <- args
+  different$focal_regions <- "B"
+  expect_error(do.call(fibrtraq_study, different), "new output directory")
+  expect_identical(tools::md5sum(saved), hashes)
+
+  utils::write.csv(prior$index[1L, ], prior$index_csv, row.names = FALSE)
+  resumed <- do.call(fibrtraq_study, args)
+  expect_identical(resumed$index$subject, c("001", "002"))
+  expect_true(all(resumed$index$run_status == "completed"))
+  expect_length(list.files(args$output_dir, pattern = "[.]html$", recursive = TRUE), 1L)
+})
+
+test_that("overwriting a historical bundle preserves its reports and results", {
+  fixture <- ftq_regional_study_fixture(tempfile("historical-fixture-"))
+  root <- tempfile("historical-results-")
+  report <- file.path(root, "001", "A", "reports", "subject", "subject_report.html")
+  dir.create(dirname(report), recursive = TRUE)
+  index <- file.path(root, "fibrtraq-run-index.csv")
+  writeLines("historical index", index)
+  writeLines("historical report", report)
+  original <- tools::md5sum(c(index, report))
+  args <- ftq_public_regional_args(fixture, root)
+  expect_error(do.call(fibrtraq_study, args), "new output directory")
+  expect_identical(tools::md5sum(c(index, report)), original)
+  expect_setequal(list.files(root, recursive = TRUE, full.names = TRUE), c(index, report))
 })
 
 test_that("validation failure retains data without appearing to pass", {
@@ -563,15 +694,15 @@ test_that("subject defaults are explicit and sanitized folder collisions are rej
   fixture <- ftq_regional_study_fixture(tempfile("public-subject-fixture-"))
   captured <- NULL
   testthat::local_mocked_bindings(
-    ftq_run_regional_study = function(...) { captured <<- list(...); captured },
+    fibrtraq_study = function(...) { captured <<- list(...); captured },
     .package = "FibrTraQ"
   )
-  expect_message(ftq_run_files(
+  expect_message(fibrtraq_single(
     tractogram = fixture$tractogram, focal_mask = fixture$masks[["A"]],
     target_masks = fixture$masks["B"], output_dir = tempfile("subject-default-")
   ), "No subject identifier supplied", fixed = TRUE)
   expect_identical(names(captured$tractograms), "subject1")
-  expect_message(ftq_run_files(
+  expect_message(fibrtraq_single(
     tractogram = fixture$tractogram, focal_mask = fixture$masks[["A"]],
     target_masks = fixture$masks["B"], output_dir = tempfile("subject-explicit-"),
     subject = "001", report_slices = c(2L, 4L)
@@ -589,27 +720,4 @@ test_that("subject defaults are explicit and sanitized folder collisions are rej
   }
   expect_silent(check(c("CON-1", "COM10", "LPT10", "S1.c"), "subject"))
   expect_silent(check(c("001", "S1c"), "subject"))
-})
-
-test_that("index shares method context and distinguishes example file checks", {
-  root <- tempfile("public-index-")
-  dir.create(root)
-  report <- file.path(root, "index.html")
-  row <- FibrTraQ:::ftq_regional_study_run_row(
-    "001", "A", list(validation = list(passed = TRUE)), NULL, NULL, "start", NULL,
-    manifest = list()
-  )
-  row$target_intersection_mode <- "local_search"
-  row$local_search_radius_mm <- 2
-  row$focal_assignment_mode <- "all_focal_voxels"
-  index <- rbind(row, transform(row, focal_region = "B"))
-  checks <- data.frame(artifact = "example", passed = TRUE, details = "matched")
-  validation <- list(package_validation_passed = TRUE, tables = checks,
-                     claims = transform(checks, claim = "claim"), reports = checks)
-  FibrTraQ:::ftq_write_regional_study_index(index, report, root, "test", validation)
-  html <- paste(readLines(report), collapse = "\n")
-  expect_length(regmatches(html, gregexpr("radius 2 mm", html, fixed = TRUE))[[1L]], 1L)
-  expect_match(html, "Known-answer comparisons: 1/1 tables and 1/1 claims", fixed = TRUE)
-  expect_match(html, "Generated HTML files present and nonempty: 1/1", fixed = TRUE)
-  expect_match(html, "browser rendering and interactive behavior require separate review", fixed = TRUE)
 })

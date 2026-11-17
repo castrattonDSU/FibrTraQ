@@ -59,33 +59,27 @@ ftq_report_write_voxel_exports <- function(result, output_dir, prefix,
   table_dir <- file.path(output_dir, "tables")
   report_paths <- ftq_report_output_paths(output_dir, prefix)
   tables <- report_paths$tables[c("all_voxels", "all_voxel_columns", "local_fraction")]
-  maps <- list()
-  if (!is.null(template_image) && file.exists(template_image)) {
-    maps <- report_paths$maps
-  }
-  ftq_check_overwrite(c(unlist(tables), unlist(maps)), overwrite)
+  fraction_volume <- NULL
+  ftq_check_overwrite(unlist(tables, use.names = FALSE), overwrite)
   view <- ftq_report_voxel_export(result)
   fraction <- ftq_report_local_fraction(result)
-  dir.create(table_dir, recursive = TRUE, showWarnings = FALSE)
-  utils::write.csv(view$data, tables$all_voxels, row.names = FALSE)
-  utils::write.csv(view$columns, tables$all_voxel_columns, row.names = FALSE)
-  utils::write.csv(fraction, tables$local_fraction, row.names = FALSE, na = "NA")
-  if (length(maps)) {
-    template <- RNifti::readNifti(template_image, internal = FALSE)
-    dims <- dim(template)[1:3]
+  if (!is.null(template_image) && file.exists(template_image)) {
+    dims <- dim(RNifti::readNifti(template_image, internal = TRUE))[1:3]
     coords <- ftq_coord_matrix(result$fNode_Coords)
     if (any(coords < 1) || any(sweep(coords, 2L, dims, ">"))) {
       stop("Focal coordinates are outside the local-fraction template grid.")
     }
-    dir.create(dirname(maps$local_fraction), recursive = TRUE, showWarnings = FALSE)
     values <- array(0, dim = dims)
-    valid <- array(0L, dim = dims)
+    valid <- array(FALSE, dim = dims)
     values[coords] <- ifelse(fraction$has_assigned_streamlines, fraction$local_fraction, 0)
-    valid[coords] <- as.integer(fraction$has_assigned_streamlines)
-    RNifti::writeNifti(values, maps$local_fraction, template = template, datatype = "float")
-    RNifti::writeNifti(valid, maps$local_fraction_valid, template = template, datatype = "uint8")
+    valid[coords] <- fraction$has_assigned_streamlines
+    fraction_volume <- list(values = values, valid = valid)
   }
-  list(tables = tables, maps = maps)
+  dir.create(table_dir, recursive = TRUE, showWarnings = FALSE)
+  utils::write.csv(view$data, tables$all_voxels, row.names = FALSE)
+  utils::write.csv(view$columns, tables$all_voxel_columns, row.names = FALSE)
+  utils::write.csv(fraction, tables$local_fraction, row.names = FALSE, na = "NA")
+  list(tables = tables, fraction_volume = fraction_volume)
 }
 
 # Explicit roles, rather than a new reserved-name blacklist, allow genuine

@@ -31,3 +31,13 @@ jobs:
       - uses: r-lib/actions/check-r-package@v2
         with:
           args: 'c("--no-manual", "--no-build-vignettes")'
+      - name: Check archived research workflows against the installed package
+        shell: Rscript {0}
+        run: |
+          candidate_lib <- tempfile("ftq-archive-library-")
+          dir.create(candidate_lib)
+          install.packages(".", lib = candidate_lib, repos = NULL, type = "source")
+          .libPaths(c(candidate_lib, .libPaths()))
+          stopifnot(nzchar(find.package("FibrTraQ", lib.loc = candidate_lib)))
+          Sys.setenv(NOT_CRAN = "true")
+          source("archive/tests/run.R")

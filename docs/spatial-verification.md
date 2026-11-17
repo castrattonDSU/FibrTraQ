@@ -25,27 +25,9 @@ quantitative interpretation and resolve that gap with the data producer.
 
 ## 2. Check the image grids
 
-`ftq_mask_grid_report()` reads the images without changing them. This checks the
-focal and target masks against the reference used in the README template:
+Check that the focal, target and local masks, reference image, background and endpoint-context masks are in the same subject space. Inspect their voxel dimensions, sizes and NIfTI transforms in your imaging software. Both public workflows check input geometry before counting and record their findings in the report’s **Preflight** section.
 
-```r
-focal_path <- file.path(node_dir, "cerebellum.nii.gz")
-reference_path <- file.path(ref_dir, "reference.nii.gz")
-mask_paths <- c(focal = focal_path, targets)
-
-grid_checks <- do.call(rbind, lapply(mask_paths, function(path) {
-  ftq_mask_grid_report(mask = path, template_image = reference_path)
-}))
-
-grid_checks[, c("mask", "dims_match", "voxel_size_match",
-                 "affine_match", "grid_match")]
-stopifnot(all(grid_checks$grid_match), all(grid_checks$voxel_size_match))
-```
-
-Check any separate local, background or endpoint-context image too. For a
-four-dimensional reference, first identify the appropriate three-dimensional
-anatomical volume; see the [reference-image options](advanced-workflows.md#recommended-or-optional-files)
-and `?ftq_run_files` for the package's b-value requirements.
+For a four-dimensional diffusion reference, supply one b-value for each volume so FibrTraQ can prepare a three-dimensional low-b image. See the [reference-image options](advanced-workflows.md#recommended-or-optional-files).
 
 **A grid match means that the read image geometry agrees.** It cannot detect
 incorrectly copied headers, establish the subject's identity or prove that a
@@ -78,9 +60,9 @@ that produces the preferred result.
 ## 4. Pin the supported mapping in the analysis
 
 For `.trk`, after the source geometry and independent review support a mapping, set both
-`track_space` and `axis_flip` explicitly in `ftq_run_files()`. Supported spaces
+`track_space` and `axis_flip` explicitly in `fibrtraq_single()`. Supported spaces
 are `"voxel"`, `"voxelmm"`, `"vox10"`, `"world"` and `"trackvis"`; consult
-`?FibrTraQ` for their definitions. Axis-flip entries correspond to the three
+`?fibrtraq_single` for the mapping options. Axis-flip entries correspond to the three
 voxel-array axes and are not interchangeable with a viewer's display labels.
 
 For example, **only when your evidence establishes voxel-millimeter coordinates
@@ -88,11 +70,11 @@ with no axis reflections**, use this replacement for the README's analysis
 call. It keeps the README's assignment and discretization settings:
 
 ```r
-analysis <- ftq_run_files(
+analysis <- fibrtraq_single(
   tractogram = file.path(trk_dir, "tractogram.trk"),
-  focal_mask = focal_path,
+  focal_mask = file.path(node_dir, "cerebellum.nii.gz"),
   target_masks = targets,
-  reference_image = reference_path,
+  reference_image = file.path(ref_dir, "reference.nii.gz"),
   output_dir = output_dir,
   subject = subject_id,
   focal_label = "cerebellum",
@@ -143,9 +125,9 @@ metadata_path
 browseURL(analysis$report_index)
 ```
 
-For `ftq_run_files()`, the index contains the single requested analysis. For a
+For `fibrtraq_single()`, the index contains the single requested analysis. For a
 regional study, review every row and use its corresponding `metadata_json`
-path. The metadata JSON lives alongside the core CSVs in the subject/focal-region
+path. The metadata JSON lives in the subject/focal-region
 folder and is linked from the report's Methods section. It records package
 identity, input inventory, parameters, preflight checks and result summaries.
 A run rejected before counting has a failed index entry and no scientific

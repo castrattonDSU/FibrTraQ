@@ -22,21 +22,6 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
-// ftq_spacing_chunk_cpp
-List ftq_spacing_chunk_cpp(List tracks, NumericMatrix raw_to_voxel, NumericVector voxel_size, double bin_width_mm, double bin_width_vox);
-RcppExport SEXP _FibrTraQ_ftq_spacing_chunk_cpp(SEXP tracksSEXP, SEXP raw_to_voxelSEXP, SEXP voxel_sizeSEXP, SEXP bin_width_mmSEXP, SEXP bin_width_voxSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< List >::type tracks(tracksSEXP);
-    Rcpp::traits::input_parameter< NumericMatrix >::type raw_to_voxel(raw_to_voxelSEXP);
-    Rcpp::traits::input_parameter< NumericVector >::type voxel_size(voxel_sizeSEXP);
-    Rcpp::traits::input_parameter< double >::type bin_width_mm(bin_width_mmSEXP);
-    Rcpp::traits::input_parameter< double >::type bin_width_vox(bin_width_voxSEXP);
-    rcpp_result_gen = Rcpp::wrap(ftq_spacing_chunk_cpp(tracks, raw_to_voxel, voxel_size, bin_width_mm, bin_width_vox));
-    return rcpp_result_gen;
-END_RCPP
-}
 // ftq_density_chunk_cpp
 List ftq_density_chunk_cpp(List tracks, NumericMatrix raw_to_voxel, std::string method, LogicalVector axis_flip, IntegerVector vol_dim, std::string streamline_voxelization_mode);
 RcppExport SEXP _FibrTraQ_ftq_density_chunk_cpp(SEXP tracksSEXP, SEXP raw_to_voxelSEXP, SEXP methodSEXP, SEXP axis_flipSEXP, SEXP vol_dimSEXP, SEXP streamline_voxelization_modeSEXP) {
@@ -50,26 +35,6 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< IntegerVector >::type vol_dim(vol_dimSEXP);
     Rcpp::traits::input_parameter< std::string >::type streamline_voxelization_mode(streamline_voxelization_modeSEXP);
     rcpp_result_gen = Rcpp::wrap(ftq_density_chunk_cpp(tracks, raw_to_voxel, method, axis_flip, vol_dim, streamline_voxelization_mode));
-    return rcpp_result_gen;
-END_RCPP
-}
-// ftq_endpoint_audit_chunk_cpp
-List ftq_endpoint_audit_chunk_cpp(List tracks, NumericMatrix raw_to_voxel, std::string method, LogicalVector axis_flip, IntegerVector vol_dim, LogicalMatrix region_lut, LogicalMatrix region_lut_dilated, LogicalMatrix context_lut, std::string streamline_voxelization_mode, int penetration_hist_max);
-RcppExport SEXP _FibrTraQ_ftq_endpoint_audit_chunk_cpp(SEXP tracksSEXP, SEXP raw_to_voxelSEXP, SEXP methodSEXP, SEXP axis_flipSEXP, SEXP vol_dimSEXP, SEXP region_lutSEXP, SEXP region_lut_dilatedSEXP, SEXP context_lutSEXP, SEXP streamline_voxelization_modeSEXP, SEXP penetration_hist_maxSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< List >::type tracks(tracksSEXP);
-    Rcpp::traits::input_parameter< NumericMatrix >::type raw_to_voxel(raw_to_voxelSEXP);
-    Rcpp::traits::input_parameter< std::string >::type method(methodSEXP);
-    Rcpp::traits::input_parameter< LogicalVector >::type axis_flip(axis_flipSEXP);
-    Rcpp::traits::input_parameter< IntegerVector >::type vol_dim(vol_dimSEXP);
-    Rcpp::traits::input_parameter< LogicalMatrix >::type region_lut(region_lutSEXP);
-    Rcpp::traits::input_parameter< LogicalMatrix >::type region_lut_dilated(region_lut_dilatedSEXP);
-    Rcpp::traits::input_parameter< LogicalMatrix >::type context_lut(context_lutSEXP);
-    Rcpp::traits::input_parameter< std::string >::type streamline_voxelization_mode(streamline_voxelization_modeSEXP);
-    Rcpp::traits::input_parameter< int >::type penetration_hist_max(penetration_hist_maxSEXP);
-    rcpp_result_gen = Rcpp::wrap(ftq_endpoint_audit_chunk_cpp(tracks, raw_to_voxel, method, axis_flip, vol_dim, region_lut, region_lut_dilated, context_lut, streamline_voxelization_mode, penetration_hist_max));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -131,9 +96,7 @@ END_RCPP
 
 static const R_CallMethodDef CallEntries[] = {
     {"_FibrTraQ_ftq_dilate_lut_cpp", (DL_FUNC) &_FibrTraQ_ftq_dilate_lut_cpp, 2},
-    {"_FibrTraQ_ftq_spacing_chunk_cpp", (DL_FUNC) &_FibrTraQ_ftq_spacing_chunk_cpp, 5},
     {"_FibrTraQ_ftq_density_chunk_cpp", (DL_FUNC) &_FibrTraQ_ftq_density_chunk_cpp, 6},
-    {"_FibrTraQ_ftq_endpoint_audit_chunk_cpp", (DL_FUNC) &_FibrTraQ_ftq_endpoint_audit_chunk_cpp, 10},
     {"_FibrTraQ_ftq_count_chunk_cpp", (DL_FUNC) &_FibrTraQ_ftq_count_chunk_cpp, 21},
     {"_FibrTraQ_ftq_qc_sample_chunk_cpp", (DL_FUNC) &_FibrTraQ_ftq_qc_sample_chunk_cpp, 14},
     {NULL, NULL, 0}

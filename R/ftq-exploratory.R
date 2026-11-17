@@ -6,7 +6,7 @@
 #' and leave-no-target fraction.
 #'
 #' @param result_csv A FibrTraQ per-voxel CSV path, or a data.frame returned by
-#'   [fibrtraq()].
+#'   `fibrtraq()`.
 #' @param output_dir Optional directory where summary CSVs and maps are written.
 #' @param prefix Output filename prefix. Defaults to `"fibrtraq-exploratory"`.
 #' @param target_labels Optional character vector of target columns to include.
@@ -18,7 +18,7 @@
 #' @param assignment_mode Optional target-assignment mode represented by
 #'   `result_csv`. When `result_csv` is a fresh FibrTraQ data frame, its mode
 #'   attribute is used by default. CSV inputs recover the mode from the matching
-#'   sibling run-metadata JSON when available. Otherwise the historical
+#'   run-metadata JSON when available. Otherwise the historical
 #'   `"full_streamline"` fallback is retained with a warning for CSV inputs and
 #'   an explicit unverified-method notice in the report.
 #'   Legacy and paper terminology aliases are accepted and normalized.
@@ -29,7 +29,7 @@
 #'
 #' @return A list containing per-voxel exploratory data, target totals,
 #'   assignment provenance, and paths to any written outputs.
-#' @export
+#' @noRd
 ftq_exploratory_summary <- function(result_csv,
                                     output_dir = NULL,
                                     prefix = "fibrtraq-exploratory",
@@ -184,7 +184,7 @@ ftq_exploratory_summary <- function(result_csv,
 #'
 #' Write a primary-target lookup CSV, five figures, and a compact HTML report
 #' from a many-target FibrTraQ result table. Derived metrics are retained in the
-#' returned summary. Use [ftq_exploratory_summary()] for explicit research CSV
+#' returned summary. Use `ftq_exploratory_summary()` for explicit research CSV
 #' and NIfTI exports.
 #'
 #' @param result_csv A FibrTraQ per-voxel CSV path, or data.frame.
@@ -200,7 +200,7 @@ ftq_exploratory_summary <- function(result_csv,
 #' @param assignment_mode Optional target-assignment mode represented by
 #'   `result_csv`. When `result_csv` is a fresh FibrTraQ data frame, its mode
 #'   attribute is used by default. CSV inputs recover the mode from the matching
-#'   sibling run-metadata JSON when available. Otherwise the historical
+#'   run-metadata JSON when available. Otherwise the historical
 #'   `"full_streamline"` fallback is retained with a warning for CSV inputs and
 #'   an explicit unverified-method notice in the report.
 #'   Legacy and paper terminology aliases are accepted and normalized.
@@ -211,8 +211,12 @@ ftq_exploratory_summary <- function(result_csv,
 #' @param report_slices Optional one-based axial slice indices for the spatial
 #'   previews. NULL retains automatic slice selection; this does not alter maps.
 #'
-#' @return A list with summary outputs, figure paths, and HTML path.
-#' @export
+#' @param .report_path Optional final HTML path used when assembling a study report.
+#'   When supplied, the lookup is written under `tables` and the report markup
+#'   is returned for assembly.
+#' @return A list with summary outputs, figure paths, HTML path and, during
+#'   study assembly, the HTML markup.
+#' @noRd
 ftq_exploratory_report <- function(result_csv,
                                    output_dir,
                                    template_image,
@@ -223,7 +227,8 @@ ftq_exploratory_report <- function(result_csv,
                                    tractogram_context = NULL,
                                    assignment_mode = NULL,
                                    search_radius_mm = NULL,
-                                   report_slices = NULL) {
+                                   report_slices = NULL,
+                                   .report_path = NULL) {
   output_dir <- normalizePath(path.expand(output_dir), mustWork = FALSE)
   fig_dir <- file.path(output_dir, "figures")
   dir.create(fig_dir, recursive = TRUE, showWarnings = FALSE)
@@ -240,9 +245,11 @@ ftq_exploratory_report <- function(result_csv,
     search_radius_mm = search_radius_mm
   )
 
-  summary$outputs$lut_csv <- file.path(output_dir,
+  table_dir <- if (is.null(.report_path)) output_dir else file.path(output_dir, "tables")
+  dir.create(table_dir, recursive = TRUE, showWarnings = FALSE)
+  summary$outputs$lut_csv <- file.path(table_dir,
     paste0(prefix, "_fibrtraq_exploratory-primary-target-lut.csv"))
-  html <- file.path(fig_dir, paste0(prefix, "_fibrtraq_target-report.html"))
+  html <- ftq_value(.report_path, file.path(fig_dir, paste0(prefix, "_fibrtraq_target-report.html")))
   figures <- list(
     target_totals = file.path(fig_dir, paste0(prefix, "_fig_exploratory-target-totals.png")),
     primary_target = file.path(fig_dir, paste0(prefix, "_fig_exploratory-primary-target.png")),
@@ -250,7 +257,7 @@ ftq_exploratory_report <- function(result_csv,
     diversity = file.path(fig_dir, paste0(prefix, "_fig_exploratory-target-diversity.png")),
     no_target = file.path(fig_dir, paste0(prefix, "_fig_exploratory-leave-no-target-fraction.png"))
   )
-  ftq_check_overwrite(c(summary$outputs$lut_csv, html, unlist(figures)), overwrite)
+  ftq_check_overwrite(c(summary$outputs$lut_csv, if (is.null(.report_path)) html, unlist(figures)), overwrite)
   utils::write.csv(ftq_exploratory_lut(summary$targets), summary$outputs$lut_csv,
     row.names = FALSE)
 
@@ -317,11 +324,13 @@ ftq_exploratory_report <- function(result_csv,
   )
   figures <- figures[file.exists(unlist(figures, use.names = FALSE))]
 
-  ftq_write_exploratory_html_report(html, summary, figures, background_label)
+  html_content <- ftq_write_exploratory_html_report(html, summary, figures, background_label,
+                                                   write_file = is.null(.report_path))
   list(
     summary = summary,
     figures = figures,
-    html = html
+    html = html,
+    html_content = if (!is.null(.report_path)) html_content
   )
 }
 
@@ -332,19 +341,14 @@ ftq_exploratory_method <- function(input, result, assignment_mode, search_radius
     x
   }
   metadata <- NULL
-  metadata_path <- NULL
-  if (is.character(input) && length(input) == 1L &&
-      grepl("_fibrtraq_per-voxel-hits\\.csv$", input)) {
-    candidate <- sub("_fibrtraq_per-voxel-hits\\.csv$", "_fibrtraq_run-metadata.json", input)
-    if (file.exists(candidate)) {
-      metadata <- tryCatch(jsonlite::read_json(candidate, simplifyVector = FALSE),
-        error = function(e) stop("Cannot read companion run metadata: ", conditionMessage(e)))
-      recorded_file <- scalar(metadata$files$result_csv)
-      if (!is.null(recorded_file) && !identical(
-        basename(ftq_report_normalize_path(recorded_file)), basename(input)
-      )) stop("Companion run metadata names a different result CSV.")
-      metadata_path <- candidate
-    }
+  metadata_path <- ftq_result_sidecar(input, "run-metadata")
+  if (!is.null(metadata_path)) {
+    metadata <- tryCatch(jsonlite::read_json(metadata_path, simplifyVector = FALSE),
+      error = function(e) stop("Cannot read companion run metadata: ", conditionMessage(e)))
+    recorded_file <- scalar(metadata$files$result_csv)
+    if (!is.null(recorded_file) && !identical(
+      basename(ftq_report_normalize_path(recorded_file)), basename(input)
+    )) stop("Companion run metadata names a different result CSV.")
   }
   from_result <- scalar(attr(result, "fibrtraq_target_intersection_mode", exact = TRUE))
   from_summary <- scalar(metadata$summary$target_intersection_mode)
@@ -639,7 +643,7 @@ ftq_draw_categorical_legend <- function(arr, lut, n = 14L) {
   graphics::title("Primary target", cex.main = 0.75)
 }
 
-ftq_write_exploratory_html_report <- function(path, summary, figures, background_label = NULL) {
+ftq_write_exploratory_html_report <- function(path, summary, figures, background_label = NULL, write_file = TRUE) {
   esc <- function(x) {
     x <- as.character(x)
     x <- gsub("&", "&amp;", x, fixed = TRUE)
@@ -708,28 +712,6 @@ ftq_write_exploratory_html_report <- function(path, summary, figures, background
   } else ""
   totals <- summary$target_totals
   names(totals) <- c("Target", "Voxel\u2013streamline\u2013target associations", "Associations / assigned voxel\u2013streamline pairs (%)", "Focal voxels with target associations")
-  # Reuse an existing guide in this bundle rather than duplicating it next to
-  # every report. Standalone reports remain useful without an external guide.
-  guide <- NULL
-  guide_dir <- dirname(normalizePath(path, mustWork = FALSE))
-  repeat {
-    candidates <- list.files(guide_dir,
-      pattern = "^OUTPUTS_README(-[a-f0-9]{12})?[.]html$", full.names = TRUE)
-    for (candidate in candidates) {
-      markdown <- sub("[.]html$", ".md", basename(candidate))
-      if (identical(readLines(candidate, warn = FALSE), ftq_output_guide_html(markdown))) {
-        guide <- candidate
-        break
-      }
-    }
-    if (!is.null(guide)) break
-    parent <- dirname(guide_dir)
-    if (identical(parent, guide_dir)) break
-    guide_dir <- parent
-  }
-  guide_nav <- if (!is.null(guide)) paste0("<a href='", href(guide), "'>Output definitions</a>") else ""
-  guide_download <- if (!is.null(guide)) paste0("<li><a href='", href(guide),
-    "'>Output definitions and interpretation guide (HTML)</a></li>") else ""
   downloads <- paste0(
     link(summary$outputs$summary_csv, "Complete exploratory metrics \u2014 every focal voxel (CSV)"),
     link(summary$outputs$lut_csv, "Primary-target index and color lookup (CSV)"))
@@ -764,7 +746,7 @@ ftq_write_exploratory_html_report <- function(path, summary, figures, background
   html <- paste0(
     "<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>",
     esc(title), "</title>", css, "</head><body><h1>", esc(title), "</h1>",
-    "<nav><a href='#coverage'>Coverage</a><a href='#figures'>Figures</a><a href='#downloads'>Downloads</a>", guide_nav, "</nav>",
+    "<nav><a href='#coverage'>Coverage</a><a href='#figures'>Figures</a><a href='#downloads'>Downloads</a></nav>",
     "<div class='meta'><b>Purpose:</b> inspect how target associations vary across focal voxels.",
     "<br><b>Target assignment mode:</b> ", esc(mode), radius_note, "</div>", warning_note, context_note,
     "<h2 id='coverage'>Coverage and interpretation</h2>", table_html(overview, nrow(overview)),
@@ -775,11 +757,12 @@ ftq_write_exploratory_html_report <- function(path, summary, figures, background
     "<details><summary>Target association table</summary><p>All targets, ranked by associations. Percentages divide target associations by all assigned focal-voxel\u2013streamline pairs. Targets can overlap, so these percentages do not partition 100%.</p>",
     table_html(totals, nrow(totals)), "</details>",
     "<h2 id='downloads'>Lookup and definitions</h2><ul>", downloads, supporting,
-    guide_download, "</ul>",
+    "</ul>",
     if (nzchar(maps)) paste0("<details><summary>Research maps</summary><p>Use the primary-target lookup to interpret indices and the method definitions to interpret zero values and counting units.</p><ul>", maps, "</ul></details>") else "",
     "<details><summary>Methods and provenance</summary>", table_html(method_rows, nrow(method_rows)),
     "<p>This report summarizes saved assignments; it does not rerun tractography or independently validate anatomical connectivity.</p></details>",
     "</body></html>"
   )
-  writeLines(html, path)
+  if (write_file) writeLines(html, path)
+  invisible(html)
 }

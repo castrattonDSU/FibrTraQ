@@ -6,8 +6,7 @@
 #' three-dimensional quality-control viewer. Spatial alignment must be
 #' independently verified before interpreting results.
 #'
-#' @seealso [ftq_run_example()] for a bundled known-answer example and
-#'   [ftq_run_files()] for analysis of existing input files.
+#' @seealso [fibrtraq_single()] for one subject and [fibrtraq_study()] for a study.
 #'
 #' @keywords internal
 #' @useDynLib FibrTraQ, .registration = TRUE

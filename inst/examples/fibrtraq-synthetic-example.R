@@ -1,18 +1,25 @@
-# Reproduce the bundled FibrTraQ known-answer dataset from a fresh R session.
+# Run the bundled 14-streamline example. In RStudio the report opens on completion.
+local({
+  inputs <- system.file("extdata", "fibrtraq-known-answer", "inputs",
+                        package = "FibrTraQ", mustWork = TRUE)
+  input <- function(name) file.path(inputs, paste0("sub-example_", name))
 
-library(FibrTraQ)
-
-example <- ftq_run_example(
-  output_dir = file.path(tempdir(), "fibrtraq-known-answer-output"),
-  overwrite = TRUE,
-  verbose = FALSE
-)
-
-print(example)
-print(example$validation$tables)
-
-cat("\nStandard report:    ", example$primary_report, "\n", sep = "")
-cat("Exploratory report: ", example$exploratory_report, "\n", sep = "")
-cat("Interactive 3-D QC: ", example$interactive_3d_qc, "\n", sep = "")
-
-invisible(example)
+  demo <- FibrTraQ::fibrtraq_single(
+    tractogram = input("tractogram.trk"),
+    focal_mask = input("focal.nii.gz"),
+    target_masks = c(cortex = input("target-cortex.nii.gz"),
+                     brainstem = input("target-brainstem.nii.gz")),
+    local_mask = input("local.nii.gz"),
+    endpoint_contexts = c(analysis_domain = input("context.nii.gz")),
+    reference_image = input("reference.nii.gz"),
+    subject = "sub-example",
+    focal_label = "focal",
+    track_space = "voxel",
+    axis_flip = c(FALSE, FALSE, FALSE),
+    discretization = "round",
+    output_dir = tempfile("fibrtraq-example-"),
+    open = interactive()
+  )
+  stopifnot(isTRUE(demo$index$validation_passed))
+  invisible(demo)
+})
