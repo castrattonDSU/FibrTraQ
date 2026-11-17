@@ -1,10 +1,10 @@
 # Use the same report paths for writing and preflight. In particular, a short
-# output root alone is insufficient: the prefix occurs in both directory and
-# filename, and target labels also appear in ranked table filenames.
+# output root alone is insufficient: subject, focal and target labels all
+# contribute to the full path of a ranked table.
 ftq_report_output_paths <- function(output_dir, prefix, target_labels = NULL,
                                     write_endpoint = FALSE,
                                     write_local_search = FALSE) {
-  figure <- function(suffix) file.path(output_dir, "report-figures", paste0(prefix, suffix))
+  figure <- function(suffix) file.path(output_dir, "figures", paste0(prefix, suffix))
   table <- function(suffix) file.path(output_dir, "tables", paste0(prefix, suffix))
   figures <- list(
     fate = figure("_fig_fate-summary.png"),
@@ -33,7 +33,7 @@ ftq_report_output_paths <- function(output_dir, prefix, target_labels = NULL,
     tables$local_search_summary <- table("_local-search-summary.csv")
     tables$local_search_endpoint_status <- table("_local-search-endpoint-status.csv")
   }
-  metrics <- c("leave_no_target", target_labels)
+  metrics <- ftq_ranked_metrics(target_labels)
   ranked <- stats::setNames(lapply(metrics, function(metric) {
     ftq_ranked_table_path(file.path(output_dir, "tables"), prefix, metric)
   }), metrics)
@@ -41,13 +41,12 @@ ftq_report_output_paths <- function(output_dir, prefix, target_labels = NULL,
     html = file.path(output_dir, paste0(prefix, "_report.html")),
     figures = figures,
     tables = tables,
-    ranked = ranked,
-    maps = list(
-      local_fraction = file.path(output_dir, "maps", paste0(prefix, "_local-fraction.nii.gz")),
-      local_fraction_valid = file.path(output_dir, "maps", paste0(prefix, "_local-fraction-valid.nii.gz"))
-    ),
-    guides = file.path(output_dir, c("OUTPUTS_README.html", "OUTPUTS_README.md"))
+    ranked = ranked
   )
+}
+
+ftq_ranked_metrics <- function(target_labels = character()) {
+  c("leave_no_target", target_labels)
 }
 
 ftq_ranked_table_path <- function(table_dir, prefix, metric, n = NULL) {
@@ -81,30 +80,30 @@ ftq_run_output_paths <- function(output_dir, prefix, target_labels = NULL,
                                  write_maps = TRUE, write_report = TRUE,
                                  write_exploratory_report = FALSE,
                                  write_qc_viewer = FALSE, write_endpoint = TRUE,
-                                 write_local_search = FALSE) {
+                                 write_local_search = FALSE, report_path = NULL,
+                                 write_density_context = write_report) {
   output_dir <- ftq_absolute_output_path(output_dir)
   paths <- unlist(ftq_planned_output_paths(
     output_dir, prefix, target_labels, write_maps,
     write_endpoint, write_local_search
   ), use.names = FALSE)
-  report_dir <- file.path(output_dir, "reports", prefix)
   if (isTRUE(write_report)) {
-    paths <- c(paths, unlist(ftq_report_output_paths(
-      report_dir, prefix, target_labels, write_endpoint, write_local_search
-    ), use.names = FALSE), file.path(output_dir, "maps",
-      paste0(prefix, "_fibrtraq_tractogram-density.nii.gz")))
+    primary <- ftq_report_output_paths(output_dir, prefix, target_labels, write_endpoint, write_local_search)
+    if (!is.null(report_path)) primary$html <- ftq_absolute_output_path(report_path)
+    paths <- c(paths, unlist(primary, use.names = FALSE))
+    if (isTRUE(write_density_context)) {
+      paths <- c(paths, file.path(output_dir, "maps", paste0(prefix, "_fibrtraq_tractogram-density.nii.gz")))
+    }
   }
   if (isTRUE(write_exploratory_report)) {
-    suffixes <- c("_fibrtraq_target-report.html", "_fig_exploratory-target-totals.png",
+    suffixes <- c("_fig_exploratory-target-totals.png",
       "_fig_exploratory-primary-target.png", "_fig_exploratory-target-entropy.png",
       "_fig_exploratory-target-diversity.png", "_fig_exploratory-leave-no-target-fraction.png")
     paths <- c(paths, file.path(output_dir, "figures", paste0(prefix, suffixes)),
-      file.path(output_dir, paste0(prefix, "_fibrtraq_exploratory-primary-target-lut.csv")))
+      file.path(output_dir, "tables", paste0(prefix, "_fibrtraq_exploratory-primary-target-lut.csv")))
   }
   if (isTRUE(write_qc_viewer)) {
-    paths <- c(paths, file.path(report_dir, "report-figures", c(
-      paste0(prefix, "_fig_interactive-3d-qc.html"), "OUTPUTS_README.html", "OUTPUTS_README.md"
-    )))
+    paths <- c(paths, file.path(output_dir, "figures", paste0(prefix, "_qc-scene.js")))
   }
   unique(paths)
 }
@@ -115,10 +114,11 @@ ftq_regional_study_output_paths <- function(output_dir, subjects, region_labels,
                                             write_exploratory_report = TRUE,
                                             write_qc_viewer = TRUE,
                                             write_endpoint = TRUE,
-                                            write_local_search = FALSE) {
+                                            write_local_search = FALSE,
+                                            context_subjects = subjects) {
   output_dir <- ftq_absolute_output_path(output_dir)
-  paths <- file.path(output_dir, c("fibrtraq-run-index.csv", "fibrtraq-prepared-inputs.csv",
-    "fibrtraq-report-index.html", "OUTPUTS_README.html", "OUTPUTS_README.md"))
+  report_path <- ftq_study_report_path(output_dir, subjects, focal_regions, description)
+  paths <- c(report_path, file.path(output_dir, c("fibrtraq-run-index.csv", "fibrtraq-prepared-inputs.csv")))
   for (subject in subjects) {
     subject_dir <- file.path(output_dir, ftq_sanitize_label(subject))
     # Preparation is conditional on input grids and dimensionality; reserve its
@@ -133,19 +133,21 @@ ftq_regional_study_output_paths <- function(output_dir, subjects, region_labels,
       paths <- c(paths, ftq_run_output_paths(
         file.path(subject_dir, ftq_sanitize_label(focal)), prefix,
         setdiff(region_labels, focal), write_maps, write_report,
-        write_exploratory_report, write_qc_viewer, write_endpoint, write_local_search
+        write_exploratory_report, write_qc_viewer, write_endpoint, write_local_search, report_path,
+        write_density_context = subject %in% context_subjects
       ))
     }
   }
   unique(paths)
 }
 
-ftq_manifest_output_paths <- function(manifest) {
+ftq_manifest_output_paths <- function(manifest, report_path = NULL) {
   m <- manifest
   paths <- ftq_run_output_paths(
     m$output_dir, m$prefix, m$target_labels, m$write_maps, m$write_report,
     write_endpoint = identical(m$endpoint_analysis, "exact_and_dilated1"),
-    write_local_search = identical(m$target_intersection_mode, "local_search")
+    write_local_search = identical(m$target_intersection_mode, "local_search"),
+    report_path = report_path, write_density_context = FALSE
   )
   cfg <- m$tractogram_context
   has_background <- !is.null(m$background_image) && file.exists(m$background_image)
@@ -188,4 +190,31 @@ ftq_check_windows_output_paths <- function(paths, output_dir,
     " (260 including the terminator).\nLongest planned path (", lengths[[longest]],
     "): ", paths[[longest]], "\n", recommendation,
     "\nNo analysis or output files have been started by this call.", call. = FALSE)
+}
+
+
+# Walk from each planned directory to the nearest existing ancestor without
+# creating anything. An ordinary file can obstruct a directory at any level.
+ftq_check_output_destinations <- function(paths, overwrite) {
+  ftq_check_overwrite(paths, overwrite)
+  existing <- paths[file.exists(paths)]
+  if (length(existing)) {
+    blocked <- existing[dir.exists(existing) | file.access(existing, 2L) != 0L]
+    if (length(blocked)) {
+      stop("Output files cannot be replaced at: ", paste(blocked, collapse = ", "), call. = FALSE)
+    }
+  }
+  ancestors <- unique(dirname(paths))
+  repeat {
+    missing <- !file.exists(ancestors)
+    if (!any(missing)) break
+    parents <- dirname(ancestors[missing])
+    if (identical(parents, ancestors[missing])) break
+    ancestors <- unique(c(ancestors[!missing], parents))
+  }
+  blocked <- ancestors[!dir.exists(ancestors) | file.access(ancestors, 2L) != 0L]
+  if (length(blocked)) {
+    stop("A writable directory is required at ", paste(blocked, collapse = ", "), call. = FALSE)
+  }
+  invisible(NULL)
 }

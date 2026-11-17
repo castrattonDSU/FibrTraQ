@@ -72,8 +72,8 @@ tck_expect_science_equal <- function(actual, expected, info = NULL) {
     expect_equal(attr(actual, name), attr(expected, name),
                  tolerance = 1e-5, info = paste(info, name))
   }
-  expect_equal(ftq_target_summary_tables(actual, a_roi),
-               ftq_target_summary_tables(expected, e_roi),
+  expect_equal(rsc_summary(actual, percent = TRUE, warn_legacy = FALSE),
+               rsc_summary(expected, percent = TRUE, warn_legacy = FALSE),
                tolerance = 0, info = info)
 }
 

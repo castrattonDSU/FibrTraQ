@@ -19,20 +19,27 @@ test_that("planned report paths retain the public names and account for options"
   prefix <- "S22_desc-analysis-cerebellum-regional-connectivity"
   paths <- ftq_regional_study_output_paths(root, "S22", c("cerebellum", "cerebrum"),
     "cerebellum", "analysis")
-  report_dir <- file.path(root, "S22", "cerebellum", "reports", prefix)
+  report_dir <- file.path(root, "S22", "cerebellum")
   expect_contains(paths, file.path(report_dir, paste0(prefix, "_report.html")))
-  expect_contains(paths, file.path(report_dir, "report-figures",
+  expect_contains(paths, file.path(report_dir, "figures",
     paste0(prefix, "_fig_endpoint-exact-vs-dilated1.png")))
   expect_contains(paths, file.path(report_dir, "tables", paste0(prefix, "_ranked_cerebrum_voxels.csv")))
-  expect_contains(paths, file.path(report_dir, "report-figures",
-    paste0(prefix, "_fig_interactive-3d-qc.html")))
+  expect_contains(paths, file.path(report_dir, "figures",
+    paste0(prefix, "_qc-scene.js")))
+  expect_contains(paths, file.path(report_dir, "tables", paste0(prefix, "_fibrtraq_per-voxel-hits.csv")))
+  expect_contains(paths, file.path(report_dir, "tables", paste0(prefix, "_fibrtraq_exploratory-primary-target-lut.csv")))
+  expect_length(paths[grepl("[.]html$", paths)], 1L)
+  expect_false(any(grepl("local-fraction.*[.]nii|OUTPUTS_README|/reports/", paths)))
+  cohort <- ftq_regional_study_output_paths(root, c("S22", "S1c"), c("cerebellum", "cerebrum"),
+    "cerebellum", "analysis")
+  expect_identical(cohort[grepl("[.]html$", cohort)], file.path(root, "fibrtraq-report-index.html"))
   short <- ftq_regional_study_output_paths(root, "S22", c("cerebellum", "cerebrum"),
     "cerebellum", "analysis", write_report = FALSE, write_maps = FALSE,
     write_exploratory_report = FALSE, write_qc_viewer = FALSE, write_endpoint = FALSE)
   expect_false(any(grepl("/reports/|/maps/|/figures/|_endpoint-", short)))
   local <- ftq_regional_study_output_paths(root, "S22", c("cerebellum", "cerebrum"),
     "cerebellum", "analysis", write_local_search = TRUE)
-  expect_contains(local, file.path(report_dir, "report-figures",
+  expect_contains(local, file.path(report_dir, "figures",
     paste0(prefix, "_fig_local-search-end-voxel-distances.png")))
   long_target <- paste(rep("t", 235), collapse = "")
   labelled <- ftq_run_output_paths("C:/x", "s", long_target, write_maps = FALSE,
@@ -65,7 +72,7 @@ test_that("nonexistent output roots retain exactly one separator after the files
 })
 
 test_that("file and regional workflows reject long paths before any outputs or analysis", {
-  example <- ftq_example_data()
+  example <- ftq_test_example_files()
   root <- file.path(tempdir(), paste(rep("long-output-", 18), collapse = ""))
   expect_false(dir.exists(root))
   check <- ftq_check_windows_output_paths
@@ -76,11 +83,11 @@ test_that("file and regional workflows reject long paths before any outputs or a
     ftq_run = function(...) stop("Scientific run must not be reached"),
     .package = "FibrTraQ"
   )
-  expect_error(ftq_run_files(example$tractogram, example$focal_mask,
+  expect_error(fibrtraq_single(example$tractogram, example$focal_mask,
     example$target_masks, root, subject = "subject", verbose = FALSE),
     "Windows output path exceeds", fixed = TRUE)
   expect_false(dir.exists(root))
-  expect_error(ftq_run_regional_study(c(subject = example$tractogram),
+  expect_error(fibrtraq_study(c(subject = example$tractogram),
     list(subject = c(focal = example$focal_mask, example$target_masks)),
     root, focal_regions = "focal", verbose = FALSE),
     "Windows output path exceeds", fixed = TRUE)
@@ -88,7 +95,7 @@ test_that("file and regional workflows reject long paths before any outputs or a
 })
 
 test_that("manifest workflow rejects long paths before scientific preflight", {
-  example <- ftq_example_data()
+  example <- ftq_test_example_files()
   root <- file.path(tempdir(), paste(rep("long-output-", 18), collapse = ""))
   check <- ftq_check_windows_output_paths
   local_mocked_bindings(

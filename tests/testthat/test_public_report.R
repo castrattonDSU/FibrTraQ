@@ -113,16 +113,23 @@ test_that("main reports use public RSC labels, complete exports and portable fig
   expect_match(html, "RSC summary (CSV)", fixed = TRUE)
   expect_match(html, "All voxels, ranked by x (CSV)", fixed = TRUE)
   expect_false(grepl("Connection summary|RSC denominator|Top-50", html))
-  expect_false(dir.exists(file.path(root, "figures")))
-  expect_true(all(basename(dirname(unlist(report$figures))) == "report-figures"))
+  expect_false(dir.exists(file.path(root, "report-figures")))
+  expect_length(list.files(root, pattern = "^OUTPUTS_README"), 0L)
+  expect_true(all(basename(dirname(unlist(report$figures))) == "figures"))
   expect_true(all(file.exists(unlist(report$figures))))
-  expect_match(html, "src='report-figures/fixture_fig_rsc-summary.png'", fixed = TRUE)
+  expect_match(html, "src='figures/fixture_fig_rsc-summary.png'", fixed = TRUE)
   observed_rsc <- utils::read.csv(report$tables$connection_summary, check.names = FALSE)
   expect_identical(names(observed_rsc), names(expected_rsc))
   expect_identical(observed_rsc$cNode, expected_rsc$cNode)
   for (column in setdiff(names(expected_rsc), "cNode")) {
     expect_equal(as.numeric(observed_rsc[[column]]), as.numeric(expected_rsc[[column]]))
   }
+  # An older optional image in a reused directory must not enter this report.
+  stale <- file.path(root, "figures", "fixture_fig_spatial-tracks.png")
+  file.create(stale)
+  report <- ftq_report(result, rsc, output_dir = root, manifest = list(prefix = "fixture"))
+  expect_null(report$figures$spatial_tracks)
+  expect_false(any(grepl(basename(stale), readLines(report$html), fixed = TRUE)))
   expect_identical(result, original)
 })
 
@@ -195,7 +202,7 @@ test_that("local fractions mark zero assignments missing and reject invalid rati
   }
 })
 
-test_that("fraction and validity NIfTI maps preserve the template grid and affine", {
+test_that("local-fraction rendering preserves the template grid and defined zeros without map files", {
   skip_if_not_installed("RNifti")
   root <- tempfile("public-fraction-maps-")
   dir.create(root)
@@ -219,19 +226,14 @@ test_that("fraction and validity NIfTI maps preserve the template grid and affin
   paths <- FibrTraQ:::ftq_report_write_voxel_exports(
     result, root, "fixture", template_image = template_path
   )
-  maps <- lapply(paths$maps, RNifti::readNifti, internal = FALSE)
-  for (map in maps) {
-    expect_identical(dim(map), dim(template))
-    expect_equal(RNifti::xform(map), RNifti::xform(template), tolerance = 1e-7)
-    expect_equal(RNifti::pixdim(map), RNifti::pixdim(template))
-    expect_equal(RNifti::pixunits(map), RNifti::pixunits(template))
-  }
-  expected_fraction <- expected_valid <- array(0, dim(template))
+  expected_fraction <- array(0, dim(template))
+  expected_valid <- array(FALSE, dim(template))
   expected_fraction[1, 1, 1] <- 0.25
   expected_fraction[3, 4, 5] <- 1
-  expected_valid[1, 1, 1] <- expected_valid[3, 4, 5] <- expected_valid[2, 2, 2] <- 1
-  expect_equal(as.numeric(maps$local_fraction), as.numeric(expected_fraction))
-  expect_equal(as.numeric(maps$local_fraction_valid), as.numeric(expected_valid))
+  expected_valid[1, 1, 1] <- expected_valid[3, 4, 5] <- expected_valid[2, 2, 2] <- TRUE
+  expect_identical(paths$fraction_volume$values, expected_fraction)
+  expect_identical(paths$fraction_volume$valid, expected_valid)
+  expect_identical(list.files(root, recursive = TRUE, pattern = "[.]nii[.]gz$"), basename(template_path))
   fractions <- utils::read.csv(paths$tables$local_fraction)
   expect_true(is.na(fractions$local_fraction[2L]))
   expect_identical(tools::md5sum(template_path), template_hash)
@@ -240,6 +242,7 @@ test_that("fraction and validity NIfTI maps preserve the template grid and affin
   expect_error(FibrTraQ:::ftq_report_write_voxel_exports(
     result, root, "outside", template_image = template_path
   ), "outside the local-fraction template grid")
+  expect_length(list.files(root, recursive = TRUE, pattern = "^outside_"), 0L)
 })
 
 test_that("explicit report slices are distinct one-based indices within the grid", {
@@ -379,12 +382,13 @@ test_that("a returned report failure preserves completed scientific files and va
   skip_if_not_installed("RNifti")
   root <- tempfile("public-report-failure-")
   on.exit(unlink(root, recursive = TRUE), add = TRUE)
-  fixture <- ftq_example_data()
+  fixture <- ftq_test_example_files()
   captured_hashes <- NULL
   captured_slices <- NULL
   testthat::local_mocked_bindings(
     ftq_report = function(result_csv, report_slices, ...) {
-      captured_hashes <<- tools::md5sum(list.files(dirname(result_csv), full.names = TRUE))
+      focal_dir <- dirname(dirname(result_csv))
+      captured_hashes <<- tools::md5sum(list.files(focal_dir, recursive = TRUE, full.names = TRUE))
       captured_slices <<- report_slices
       stop("injected presentation failure")
     }, .package = "FibrTraQ"
@@ -409,10 +413,55 @@ test_that("a returned report failure preserves completed scientific files and va
   expect_identical(run$report_error, "injected presentation failure")
   expect_identical(captured_slices, c(1L, 2L))
   expect_true(run$validation$passed)
-  expect_true(length(captured_hashes) >= 7L)
+  expect_true(all(c(run$outputs$metadata_json, run$outputs$validation_json) %in% names(captured_hashes)))
+  expect_true(length(captured_hashes) >= 9L)
   expect_identical(tools::md5sum(names(captured_hashes)), captured_hashes)
   expect_equal(FibrTraQ:::ftq_read_table(run$outputs$result_csv),
                FibrTraQ:::ftq_read_table(fixture$expected[["result"]]))
   saved_validation <- jsonlite::read_json(run$outputs$validation_json, simplifyVector = TRUE)
   expect_true(saved_validation$passed)
+})
+
+test_that("RSC links use the matching destination map and warnings stay visible", {
+  root <- tempfile("report-map-")
+  dir.create(root)
+  on.exit(unlink(root, recursive = TRUE), add = TRUE)
+  maps <- file.path(root, "maps #1")
+  dir.create(maps)
+  target <- file.path(maps, "target-A.nii.gz")
+  local <- file.path(maps, "local.nii.gz")
+  file.create(target, local)
+  missing <- file.path(maps, "missing.nii.gz")
+  result <- data.frame(fNode_Coords = "1_1_1", tracks = 1L, local = 0L,
+                       leave_no_target = 0L, none = 0L)
+  result[["A&B"]] <- 1L
+  result[["C"]] <- 0L
+  rsc <- rsc_summary(result, percent = TRUE, warn_legacy = FALSE)
+  missing_preflight <- data.frame(check = "target:A_readable", severity = "error",
+                                  passed = FALSE, detail = "Could not read A")
+  validation <- list(passed = FALSE, biological_qc_status = "unavailable",
+                     biological_qc_warnings = "No anatomical context supplied.",
+                     checks = data.frame(check = "target_totals", passed = FALSE,
+                                         detail = "Target totals disagree"))
+  html <- FibrTraQ:::ftq_write_html_report(
+    file.path(root, "report.html"), result, rsc, list(focal_region = "focal"),
+    validation, list(passed = FALSE, checks = missing_preflight), list(), list(),
+    map_paths = list("target-A&B" = target, "target-C" = missing, "local" = local),
+    write_file = FALSE
+  )
+  table_start <- regexpr("<h2>RSC summary</h2>", html, fixed = TRUE)[[1L]]
+  initial <- substr(html, 1L, table_start)
+  for (notice in c("Input checks failed.", "Computational checks failed.", "Anatomical endpoint QC: unavailable.",
+                   "No anatomical context supplied.", "Target totals disagree", "Could not read A")) {
+    expect_match(initial, notice, fixed = TRUE)
+  }
+  table <- sub("</table>.*", "", substring(html, table_start))
+  expect_match(table, "<a href='maps%20%231/target-A.nii.gz' download", fixed = TRUE)
+  expect_match(table, "'>A&amp;B</a>", fixed = TRUE)
+  expect_match(table, "<td>local</td>", fixed = TRUE)
+  expect_match(table, "<td>C</td>", fixed = TRUE)
+  expect_false(grepl("missing.nii.gz", html, fixed = TRUE))
+  order <- vapply(c("<h2>RSC summary", "<h2>Spatial Density Heatmaps", "<summary>Full preflight details"),
+                  function(text) regexpr(text, html, fixed = TRUE)[[1L]], integer(1))
+  expect_true(all(order > 0L) && all(diff(order) > 0L))
 })

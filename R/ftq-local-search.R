@@ -6,11 +6,11 @@
 #' whether that assigned streamline also intersected the target along its full
 #' voxelized path.
 #'
-#' @param result A data frame returned directly by [FibrTraQ()].
+#' @param result A data frame returned directly by `FibrTraQ()`.
 #' @return A list with `assignments`, `summary`, `endpoint_status`, and
 #'   `metadata`. For results not computed with `assignment_mode =
 #'   "local_search"`, the tables are empty and `metadata$available` is false.
-#' @export
+#' @noRd
 ftq_local_search_tables <- function(result) {
   if (!is.data.frame(result)) {
     stop("result must be a data frame returned directly by FibrTraQ().")

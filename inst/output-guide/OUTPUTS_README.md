@@ -1,10 +1,10 @@
 # FibrTraQ output guide
 
-Definitions for the installed package's public file workflows. Keep this guide with the complete results folder.
+Definitions for the installed package's public file workflows. Consult this reference for individual table columns.
 
 ## Start with Results
 
-Open the study or single-run report index and choose Results. Read the subject, focal region, assignment method, computational status and biological QC separately. The RSC summary, core maps and complete voxel table are the main results; advanced tables remain available for audit.
+Open the HTML report returned in report_index. In a study, select the subject and focal region. Read the subject, focal region, assignment method, computational status and biological QC separately. The RSC summary, core maps and complete voxel table are the main results; advanced tables remain available for audit.
 
 The complete original *_fibrtraq_per-voxel-hits.csv contains every focal voxel. The readable *_all-voxels.csv adds explicit array coordinates; use *_all-voxels-columns.csv to identify coordinate and target roles safely. Ranked CSVs contain every focal voxel, including zero-count voxels: descending selected metric, then increasing x, y, z for ties. Historical top-50 files contain only a preview.
 
@@ -14,9 +14,9 @@ Copy the complete result folder and all subfolders, then extract it before openi
 
 ## Report locations
 
-The main Results report is under reports/<run>/; its images and embedded viewer are in report-figures/. Complete ranked CSVs are in tables/ beside the report. The supporting Target report and its five PNG figures are in the focal-region figures/ folder. The primary-target lookup CSV is in the focal-region folder. Standard runs do not create exploratory-report/ or context/ folders.
+A single-analysis report is saved in the focal-region folder. A multi-analysis report is saved at the study root. Each focal region has figures/ for PNGs and viewer data, tables/ for analysis CSVs, and maps/ for core NIfTI images.
 
-The Target report retains its calculated summaries in memory and displays the method and denominators. For further research, ftq_exploratory_summary() can explicitly export the detailed derived tables and maps to a separate directory. Existing research exports and historical result folders remain readable.
+Target figures and the primary-target lookup support interpretation. The research archive provides optional exports of detailed derived tables and maps.
 
 ## Counting populations and missing values
 
@@ -26,7 +26,7 @@ RSC (%) = 100 * focal voxels with a positive count for this target / ALL focal v
 
 All focal voxels are retained. Under all_focal_voxels, a streamline is allocated to each distinct occupied focal voxel. Under first_intersection, only its first selected focal voxel receives the count: a zero-assignment voxel can still be traversed. Do not equate zero-assignment coverage with biological absence or endpoint coverage.
 
-NA means unavailable, inapplicable or unevaluable as specified for each field, not zero. Several legacy fraction fields store 0 for zero denominators: the dictionary identifies them. Exclude unevaluable voxels when interpreting distributions. The additive local-fraction CSV uses NA for zero tracks; its NIfTI stores 0 with a separate validity mask.
+NA means unavailable, inapplicable or unevaluable as specified for each field, not zero. Several legacy fraction fields store 0 for zero denominators: the dictionary identifies them. Exclude unevaluable voxels when interpreting distributions. The local-fraction CSV uses NA for zero assigned streamlines.
 
 ## Method and endpoint audit
 
@@ -44,7 +44,7 @@ fNode_Coords and readable x/y/z values are one-based image-array indices, not sc
 
 Core maps in maps/ retain the focal reference grid and affine: tracks (assigned streamline count), tracks-binary (1 if tracks > 0), local, leave-no-target, leave-with-target, and target-{label}. Outside the focal mask these maps are zero. The original focal mask is necessary to distinguish outside-mask zeros from zero-assignment focal voxels. Display scaling affects previews only.
 
-The additive local-fraction map is local / tracks on positive-assignment focal voxels, with stored zero elsewhere. The accompanying local-fraction-valid map is 1 only where tracks > 0, including zero-fraction but evaluable voxels. Read them together. These maps use the configured local ROI, not an assumed focal-only region.
+The local-fraction figure and CSV describe local / tracks within the focal mask for the configured local ROI. Interpret it only where tracks is positive.
 
 Exploratory maps are available only through the explicit research export ftq_exploratory_summary(..., output_dir = ..., template_image = ..., write_maps = TRUE). Standard reports do not write these maps or their supporting CSVs. Research maps retain the corresponding exploratory-per-voxel quantities: primary_target_index, primary_target_hits, primary_target_fraction, target_diversity, target_entropy_bits, target_entropy_fraction, total_target_hits, target_hits_per_assigned_track, leave_no_target_fraction and leave_with_target_fraction. They are supporting views. Category index 0 means no target; positive indices use the primary-target LUT. Ties choose the first target column. A stored zero entropy can mean no data or a concentrated distribution, so inspect target/assignment coverage.
 
@@ -58,13 +58,13 @@ The 3-D viewer is a quota-limited, scan-order subset selected by target assignme
 
 Prepared input, union and selected-volume CSVs document what was used or derived. The prepared/ folder is created only when an image or mask derivative is needed. Optional unavailable inputs are not analysis failures. Run indexes identify every subject/focal analysis and its outputs; record and inspect analysis versus presentation status separately. Local output paths and subject labels may contain information that needs review before sharing publicly.
 
-The bundled synthetic example compares seven scientific tables and 18 independently declared claims exactly. Four HTML artifacts are checked for existence and nonzero size. These checks do not compare rendered HTML exactly, exercise browser interaction or establish biological validity.
+The bundled synthetic example compares seven scientific tables and 18 independently declared claims exactly. The validation also checks the report and its requested components. These checks do not compare rendered HTML exactly, exercise browser interaction or establish biological validity.
 
 The families below describe standard file-workflow outputs, explicitly requested research exports, historical fields and the public grid/validation diagnostic CSVs. Target labels and added coordinates are explicit parameterized roles, not inferred numeric columns. Optional columns/whole tables appear only when their source feature is enabled. All legacy aliases remain documented so saved analyses remain readable.
 
 ## per_voxel
 
-Files or returned table: `*_fibrtraq_per-voxel-hits.csv`.
+Files or returned table: `tables/*_fibrtraq_per-voxel-hits.csv`.
 
 ### `fNode_Coords`
 
@@ -333,7 +333,7 @@ TRUE when tracks > 0; identifies where local_fraction is evaluable.
 
 ## rsc
 
-Files or returned table: `*_fibrtraq_rsc-summary.csv`.
+Files or returned table: `tables/*_fibrtraq_rsc-summary.csv`.
 
 ### `node`
 
@@ -436,7 +436,7 @@ voxels_connected / total_focal_voxels.
 
 ## fate
 
-Files or returned table: `*_fibrtraq_fate-summary.csv (voxel-weighted)`.
+Files or returned table: `tables/*_fibrtraq_fate-summary.csv (voxel-weighted)`.
 
 ### `fate`
 
@@ -473,7 +473,7 @@ Sum of per-voxel counts for this fate; leave_with_target = tracks - local - leav
 
 ## roi_summary
 
-Files or returned table: `*_fibrtraq_roi-summary.csv`.
+Files or returned table: `tables/*_fibrtraq_roi-summary.csv`.
 
 ### `total_input_streamlines`
 
@@ -1105,7 +1105,7 @@ Duplicate leave_no_target column in older top-50 previews; retained in historica
 
 ## endpoint_summary
 
-Files or returned table: `*_fibrtraq_endpoint-summary.csv`.
+Files or returned table: `tables/*_fibrtraq_endpoint-summary.csv`.
 
 ### `target`
 
@@ -1494,7 +1494,7 @@ Always full_streamline in this additive audit, even when the run's primary assig
 
 ## endpoint_penetration
 
-Files or returned table: `*_fibrtraq_endpoint-penetration.csv`.
+Files or returned table: `tables/*_fibrtraq_endpoint-penetration.csv`.
 
 ### `target`
 
@@ -1843,7 +1843,7 @@ p95 of unique target voxels, using the first histogram bin whose cumulative stre
 
 ## endpoint_context
 
-Files or returned table: `*_fibrtraq_endpoint-context.csv (Endpoint coverage)`.
+Files or returned table: `tables/*_fibrtraq_endpoint-context.csv (Endpoint coverage)`.
 
 ### `context`
 
@@ -2243,7 +2243,7 @@ Whether the context grid matches the focal/reference affine; the reference-grid 
 
 ## local_search_assignments
 
-Files or returned table: `*_fibrtraq_local-search-assignments.csv`.
+Files or returned table: `tables/*_fibrtraq_local-search-assignments.csv`.
 
 ### `streamline_index`
 
@@ -2662,7 +2662,7 @@ All rows in the focal-positive local-search assignment table.
 
 ## exploratory_per_voxel
 
-Files or returned table: `ftq_exploratory_summary()$data; explicit research export: *_fibrtraq_exploratory-per-voxel.csv`.
+Files or returned table: `research$ftq_exploratory_summary()$data; explicit research export: *_fibrtraq_exploratory-per-voxel.csv`.
 
 ### `fNode_Coords`
 
@@ -2875,7 +2875,7 @@ leave_with_target / tracks.
 
 ## exploratory_target_totals
 
-Files or returned table: `ftq_exploratory_summary()$target_totals; explicit research export: *_fibrtraq_exploratory-target-totals.csv`.
+Files or returned table: `research$ftq_exploratory_summary()$target_totals; explicit research export: *_fibrtraq_exploratory-target-totals.csv`.
 
 ### `target`
 
@@ -2923,7 +2923,7 @@ Focal voxels with a positive count for this target.
 
 ## exploratory_lut
 
-Files or returned table: `*_fibrtraq_exploratory-primary-target-lut.csv`.
+Files or returned table: `tables/*_fibrtraq_exploratory-primary-target-lut.csv`.
 
 ### `index`
 
@@ -2960,7 +2960,7 @@ Display colour for the target category; a visual key, not a measurement.
 
 ## exploratory_provenance
 
-Files or returned table: `ftq_exploratory_summary()$provenance; explicit research export: *_fibrtraq_exploratory-provenance.csv`.
+Files or returned table: `research$ftq_exploratory_summary()$provenance; explicit research export: *_fibrtraq_exploratory-provenance.csv`.
 
 ### `target_intersection_mode`
 
@@ -3188,7 +3188,7 @@ Saved path to main Results HTML ; paths document the generating workstation; use
 
 ### `exploratory_report`
 
-Saved path to supporting Target report HTML ; paths document the generating workstation; use portable HTML navigation after moving folders.
+Saved path to report containing the target section ; paths document the generating workstation; use portable HTML navigation after moving folders.
 
 - Units: file path.
 - Population: one run.
@@ -3199,7 +3199,7 @@ Saved path to supporting Target report HTML ; paths document the generating work
 
 ### `interactive_3d_qc`
 
-Saved path to interactive sampled 3-D QC HTML ; paths document the generating workstation; use portable HTML navigation after moving folders.
+Saved path to report containing interactive sampled 3-D QC ; paths document the generating workstation; use portable HTML navigation after moving folders.
 
 - Units: file path.
 - Population: one run.

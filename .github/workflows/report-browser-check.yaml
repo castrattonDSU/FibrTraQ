@@ -54,6 +54,15 @@ jobs:
           stopifnot(identical(installed$Version, unname(read.dcf(file.path(source, "DESCRIPTION"))[1L, "Version"])))
           cat(paste0("FIBRTRAQ_QA_LIBRARY=", normalizePath(library, winslash = "/"), "\n"),
               file = Sys.getenv("GITHUB_ENV"), append = TRUE)
+      - name: Check workflow counts, report recovery, and Windows path limits
+        if: matrix.tractogram-format == 'trk' && matrix.path-mode == 'normal'
+        shell: Rscript {0}
+        run: |
+          .libPaths(c(Sys.getenv("FIBRTRAQ_QA_LIBRARY"), .libPaths()))
+          Sys.setenv(NOT_CRAN = "true")
+          testthat::test_dir("tests/testthat", package = "FibrTraQ", load_package = "installed",
+                             filter = "^(known_answers|target_nifti_counts|regional_study|unified_study_status|windows_output_paths)$",
+                             reporter = "summary", stop_on_warning = TRUE)
       - name: Generate and relocate the ${{ matrix.tractogram-format }} example (${{ matrix.path-mode }})
         shell: Rscript {0}
         run: |

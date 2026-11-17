@@ -2,6 +2,7 @@
 % Please edit documentation in R/FibrTraQ-package.R
 \docType{package}
 \name{FibrTraQ-package}
+\alias{FibrTraQ}
 \alias{FibrTraQ-package}
 \title{FibrTraQ}
 \description{
@@ -12,8 +13,7 @@ three-dimensional quality-control viewer. Spatial alignment must be
 independently verified before interpreting results.
 }
 \seealso{
-\code{\link[=ftq_run_example]{ftq_run_example()}} for a bundled known-answer example and
-\code{\link[=ftq_run_files]{ftq_run_files()}} for analysis of existing input files.
+\code{\link[=fibrtraq_single]{fibrtraq_single()}} for one subject and \code{\link[=fibrtraq_study]{fibrtraq_study()}} for a study.
 }
 \author{
 \strong{Maintainer}: Chase Stratton \email{cstratton@desu.edu}

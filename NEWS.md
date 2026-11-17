@@ -1,5 +1,32 @@
 # FibrTraQ changes
 
+## Development version
+
+- Both workflows now use the focal mask as the local region by default.
+  To reproduce the previous study default, set `local_masks = "union"`.
+  This choice affects local and fate summaries.
+- Use `check_only = TRUE` to check inputs across the requested subjects and
+  focal regions before counting. A study can also read tractogram and mask
+  paths from a CSV passed to `study_sheet`; relative paths start at the CSV.
+- The report opens with QC status, destination counts and spatial heatmaps.
+  Destination names link to their available count maps. The run prints the
+  report path and the full folder to share when verbose output is enabled.
+
+- The package now exports two commands. Replace `ftq_run_files()` with
+  `fibrtraq_single()` and `ftq_run_regional_study()` with `fibrtraq_study()`.
+  Both write the combined report. For older research scripts, see the
+  research archive (`archive/README.md`) in the source repository.
+- With the default full-streamline assignment, a target map counts distinct
+  streamlines at each focal voxel that also visit the named target. As in
+  0.3.5, the default assigns stored streamline points to voxels. Repeated
+  visits by the same streamline count once per focal voxel and target.
+- The file and regional-study workflows write one HTML report. Open
+  `analysis$report_index` for the results, target patterns and 3D viewer.
+  Multi-analysis reports let you select a subject and focal region.
+- Each focal region contains `figures/`, `tables/`, and `maps/`. Local
+  fractions remain in the CSV and figure. The separate local-fraction
+  NIfTI pair and generated output guides are omitted from new runs.
+
 ## 0.3.5 (CRAN resubmission candidate; unreleased)
 
 - Cache the fixed output-column dictionary after its first use in each loaded

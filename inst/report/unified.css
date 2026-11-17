@@ -1,0 +1,30 @@
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { color-scheme: light; }
+body { margin: 0 auto; max-width: 1200px; padding: 1.4rem clamp(1rem, 4vw, 3rem); color: #172533; font: 1rem/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; overflow-wrap: anywhere; }
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem 2.5rem; justify-content: space-between; padding: .7rem 0 1rem; border-bottom: 1px solid #aebfc8; }
+header strong { color: #33495a; }
+select, button { padding: .55rem .75rem; font: inherit; color: #173f56; border: 1px solid #7794a5; border-radius: 4px; background: white; max-width: 100%; }
+button { cursor: pointer; }
+nav { display: flex; flex-wrap: wrap; gap: .4rem 1.25rem; margin: .75rem 0 1.4rem; }
+a { color: #155b84; }
+h1, h2, h3 { line-height: 1.22; }
+h1 { margin: 1.6rem 0 .8rem; }
+h2 { margin-top: 2rem; }
+img { max-width: 100%; height: auto; }
+figure { margin: 1.2rem 0 1.8rem; }
+figcaption, .note { color: #475569; }
+.table-scroll, .table-wrap { width: 100%; overflow-x: auto; }
+table { border-collapse: collapse; margin: .55rem 0 1rem; font-variant-numeric: tabular-nums; overflow-wrap: normal; }
+th, td { padding: .4rem .65rem; text-align: right; border: 1px solid #d3dce0; vertical-align: top; min-width: 6rem; }
+th { background: #eef3f5; }
+th:first-child, td:first-child { text-align: left; }
+.pass { color: #176b35; }
+.warning, .warn, .fail { color: #853d13; }
+.meta, .warning { margin: 1rem 0; padding: .7rem 1rem; background: #f1f6f8; }
+.qc-status { margin: .65rem 0 .25rem; font-weight: 600; }
+.qc-findings { margin: .25rem 0 .75rem; padding-left: 1.3rem; color: #853d13; }
+details { margin: .8rem 0; padding: .6rem 0; border-top: 1px solid #d3dce0; }
+summary { cursor: pointer; font-weight: 600; }
+footer { border-top: 1px solid #d3dce0; margin-top: 2rem; }
+#ftq-viewer { display: block; width: 100%; height: min(90vh, 1100px); min-height: 540px; border: 1px solid #ced9df; }

@@ -1156,28 +1156,28 @@ test_that("manifests and file wrapper propagate target assignment settings", {
   inputs <- file.path(root, c("focal.nii.gz", "target.nii.gz", "tracks.trk"))
   invisible(file.create(inputs))
   expect_identical(
-    names(formals(ftq_run_files))[pmatch("target", names(formals(ftq_run_files)))],
+    names(formals(fibrtraq_single))[pmatch("target", names(formals(fibrtraq_single)))],
     "target_masks"
   )
   expect_identical(
-    names(formals(ftq_run_files))[pmatch("local", names(formals(ftq_run_files)))],
+    names(formals(fibrtraq_single))[pmatch("local", names(formals(fibrtraq_single)))],
     "local_mask"
   )
   expect_identical(
-    names(formals(ftq_run_regional_study))[
-      pmatch("local", names(formals(ftq_run_regional_study)))
+    names(formals(fibrtraq_study))[
+      pmatch("local", names(formals(fibrtraq_study)))
     ],
     "local_masks"
   )
   captured <- NULL
   local_mocked_bindings(
-    ftq_run_regional_study = function(...) {
+    fibrtraq_study = function(...) {
       captured <<- list(...)
       structure(list(captured = captured), class = "ftq_regional_study_result")
     },
     .package = "FibrTraQ"
   )
-  wrapper_result <- ftq_run_files(
+  wrapper_result <- fibrtraq_single(
     tractogram = inputs[[3L]],
     focal_mask = inputs[[1L]],
     target_masks = c(T = inputs[[2L]]),

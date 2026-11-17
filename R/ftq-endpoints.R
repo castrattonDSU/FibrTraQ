@@ -5,12 +5,12 @@
 #' focal and target ROIs. The returned tables also contain target-penetration
 #' and endpoint anatomical-context summaries.
 #'
-#' @param result A data frame returned directly by [FibrTraQ()]. Endpoint
+#' @param result A data frame returned directly by `FibrTraQ()`. Endpoint
 #'   attributes are not retained by a CSV round trip; use the dedicated
 #'   endpoint CSV files for persisted results.
 #'
 #' @return A list with `summary`, `penetration`, `context`, and `metadata`.
-#' @export
+#' @noRd
 ftq_endpoint_tables <- function(result) {
   if (!is.data.frame(result)) {
     stop("result must be a data frame returned directly by FibrTraQ().")

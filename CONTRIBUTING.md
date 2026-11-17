@@ -26,7 +26,7 @@ Run the focused checks:
 ```r
 devtools::document()
 devtools::test()
-Rscript inst/scripts/fibrtraq-path-audit.R
+Rscript .github/scripts/fibrtraq-path-audit.R
 ```
 
 For release-facing changes, also run:

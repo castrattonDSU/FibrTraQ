@@ -239,7 +239,7 @@ writeLines(
     "The `expected` directory contains seven scientific CSV tables generated",
     "with the reference R backend after independent count assertions in the",
     "[fixture generator](https://github.com/castrattonDSU/FibrTraQ/blob/main/data-raw/generate-known-answer-example.R).",
-    "`ftq_run_example()` compares new outputs against those tables and resolves",
+    "The research archive's known-answer check compares outputs and resolves",
     "all 18 declarations in `known-answer-claims.csv` from both the stored and",
     "newly generated tables. Backend identity and installation-path provenance",
     "are normalized before comparison; all scientific values, labels,",
@@ -253,7 +253,7 @@ writeLines(
 
 run_root <- tempfile("fibrtraq-known-answer-generation-")
 on.exit(unlink(run_root, recursive = TRUE, force = TRUE), add = TRUE)
-analysis <- ftq_run_files(
+analysis <- fibrtraq_single(
   tractogram = paths$tractogram,
   focal_mask = paths$focal,
   target_masks = c(cortex = paths$cortex, brainstem = paths$brainstem),

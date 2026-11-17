@@ -1,0 +1,288 @@
+# FibrTraQ Extended Validation And Publication Evidence
+
+This directory contains the developer-facing machinery for testing FibrTraQ
+beyond its bundled known-answer example. It is not the package's getting-started
+guide, and the presence of a dataset template does not mean that the associated
+analysis has been completed.
+
+The repository-level
+[`VALIDATION.md`](https://github.com/castrattonDSU/FibrTraQ/blob/main/VALIDATION.md)
+summarizes current release evidence. This directory provides the longer
+protocols, manifest templates, scripts, and registry needed to extend that
+evidence. It separates:
+
+1. package-owned known-answer checks that require no download;
+2. local regression checks against accepted, versioned outputs;
+3. production-scale implementation benchmarks;
+4. independent public benchmark applications that require external data and
+   study-specific preparation.
+
+See `publication-statistical-testing-plan.md` for the validation statistics,
+negative controls, and biological hypothesis tests recommended for publication.
+See `endpoint-analysis-data-dictionary.md` for the endpoint-versus-intersection,
+target-penetration, reference-grid, and optional anatomical-context definitions.
+
+## Evidence Bundle Policy
+
+The R package should install only the small package-authored known-answer
+fixture and lightweight validation assets: manifest templates, setup/run
+scripts, dataset registry notes, benchmark summaries, and statistical testing
+plans. External raw tractograms, downloaded atlases, derived masks, full HTML
+reports, rendered figures, CSV outputs, and manuscript handoff files belong in
+an external evidence bundle such as OSF, Zenodo, or a companion repository.
+
+Each evidence bundle should include:
+
+- a plain-language `README` describing the datasets, software version, and run
+  order,
+- copied manifests used for the final analyses,
+- CSV summaries and validation JSON files,
+- full HTML reports and PNG figures,
+- checksums for raw and derived files when practical,
+- notes identifying which analyses are ground-truth validation, negative
+  controls, biological plausibility checks, and exploratory demonstrations.
+
+The installed scripts should use configurable data roots or copied manifests
+rather than private absolute paths whenever possible.
+
+## Evidence Status
+
+| Status | Dataset or check | Current evidence | Intended role |
+| --- | --- | --- | --- |
+| Complete | Bundled known-answer example | Seven exact scientific tables, report generation, integrity inventory, and automated tests | Primary user-runnable software-reproducibility check |
+| Complete, historical scope | dTOR-985 normative connectome | Production-scale R/C++ comparison for per-voxel, RSC, and fate outputs on 11,820,000 streamlines | Backend equivalence and performance evidence for established core outputs |
+| Complete, development scope | Neurodesk / BTC_preop sub-CON02 native TCK | Native reader/backend/reversal checks pass; exact converted-TRK parity fails with all differences accounted for in the [evidence record](native-tck-evidence.md) | One-human-subject native-TCK interoperability demonstration |
+| Template only | ISMRM 2015 Tractography Challenge | Manifest-generation and suite-runner support; no final release evidence is claimed here | Controlled tractography benchmark |
+| Registry only | TractoInferno / OpenNeuro ds003900 | Candidate source and setup notes only | Real human, multi-site generalization |
+| Template only | FiberCup phantom | Candidate manifest and setup notes only | Independent controlled phantom |
+| Template only | Allen CCF plus compatible mouse dMRI tractography | Candidate manifest and setup notes only | Atlas-driven mouse application with external biological context |
+| Registry only | HCP diffusion | Candidate source and setup notes only | High-quality human stress test |
+
+`public-datasets.yml` is the machine-readable status registry. An item moves to
+completed evidence only after the final run, artifacts, provenance, acceptance
+checks, and limitations have been recorded. Templates and candidates must not
+be cited as completed validation.
+
+## Acceptance Criteria
+
+Each manifest in a publication validation run should meet these criteria:
+
+- `ftq_preflight()` passes with zero blocking errors.
+- `ftq_run()` completes from raw tractogram and ROI files, not from summarized
+  CSVs.
+- `ftq_validate_run()` passes. If known-good outputs are listed in `expected`,
+  per-voxel tables, RSC summaries, and maps match within the configured
+  tolerance.
+- The output table includes `leave_no_target` and all counts are non-negative.
+- When endpoint analysis is enabled, endpoint classes partition every existing
+  full-path target intersection, penetration histograms reconcile exactly to
+  those intersections, and percentages identify their denominators in their
+  column names.
+- Endpoint analysis reports exact membership as the primary estimate and the
+  fixed 26-neighbor, one-voxel dilation only as voxel-grid sensitivity.
+- Computational validation passes independently of the biological-QC status.
+  A biological status of `review` or `unavailable` must be resolved or disclosed
+  before making anatomical-accuracy claims.
+- The HTML report is generated and includes spatial figures. Anatomical
+  background overlays are recommended for final figures, but they are not
+  required for the software to run.
+- Re-running the same manifest with the same inputs gives identical per-voxel,
+  RSC, endpoint-summary, endpoint-penetration, and endpoint-context outputs.
+
+## Running The Suite
+
+From RStudio:
+
+```r
+research <- source("archive/load.R")$value
+
+manifest_dir <- file.path("archive", "validation", "manifests")
+templates <- list.files(manifest_dir, full.names = TRUE)
+templates
+
+# After copying/editing manifests so the paths point to downloaded data:
+summary <- research$ftq_run_validation_suite(
+  manifests = "/path/to/edited-validation-manifests",
+  output_csv = "/path/to/fibrtraq-validation-summary.csv",
+  overwrite = TRUE
+)
+summary
+```
+
+From the shell:
+
+```bash
+Rscript archive/scripts/fibrtraq-validation-suite.R \
+  /path/to/edited-validation-manifests \
+  --output-csv /path/to/fibrtraq-validation-summary.csv \
+  --overwrite
+```
+
+Use `--preflight-only` first when setting up a new dataset.
+
+## Optional Native TCK Public-Data Check
+
+This procedure uses the Neurodesk MRtrix tutorial's published
+10,000-streamline `.tck` subset from one human control, `sub-CON02`, together
+with its paired cortical gray matter and gray/white matter interface images.
+The [pinned source specification](tck-public-sources.json) records the exact
+asset revision, filenames, SHA-256 checksums, citations, licenses and provenance
+limits. The [development validation record](native-tck-evidence.md) distinguishes
+exact native-reader/backend agreement from the observed TRK conversion limit.
+
+Install the FibrTraQ revision containing native TCK support first. Preparation
+also requires Python with **NiBabel and NumPy**, plus an existing **MRtrix
+`mrconvert`** executable. These are optional validation tools, not dependencies
+for installing or running the R package.
+The additional precision audit requires R 4.5.0 or later for the built-in
+`tools::sha256sum()` provenance check; this does not change the package's R
+version requirement.
+
+From the repository root, replace the two directory paths and the `mrconvert`
+path below. Use a new preparation root and a new results directory:
+
+```bash
+python3 archive/scripts/fibrtraq-tck-public-prepare.py \
+  --output-root "/path/to/tck-public-inputs" \
+  --mrconvert "/path/to/mrtrix/bin/mrconvert"
+
+Rscript archive/scripts/fibrtraq-tck-public-validation.R \
+  "/path/to/tck-public-inputs/prepared" \
+  "/path/to/new-tck-public-results"
+```
+
+Preparation preserves the downloaded files in `raw/`, checks their pinned
+checksums, and writes derived NIfTI inputs, an equivalent comparison `.trk`
+and `provenance.json` into `prepared/`. The original native `.tck` is used for
+the TCK analysis. The R runner writes reports and comparison evidence,
+including `validation-results.json` and `parity-checks.csv`, in the results
+directory. Review those records and the generated reports before accepting
+the run as evidence.
+
+For these pinned files, the strict TCK-versus-TRK comparison exits nonzero:
+Float32 conversion changes three rounded voxel paths, including one focal
+assignment. The native execution/invariance group passes separately. Preserve
+both outcomes, then run the exact accounting audit in a new directory:
+
+```bash
+Rscript archive/scripts/fibrtraq-tck-precision-audit.R \
+  "/path/to/tck-public-inputs/prepared" \
+  "/path/to/new-tck-public-results" \
+  "/path/to/new-tck-precision-audit"
+```
+
+The audit checks whether the measured conversion effects explain every changed
+count and density value. It does not relax count tolerances or relabel the
+failed exact comparison as a pass. Archive its records with the strict results.
+
+The demonstration masks use tissue values above 0.5 and a split at scanner-world
+`x = 0 mm`. They are geometric regions, not validated hemispheric labels or
+atlas parcels; the reference is a cortical gray matter probability image,
+not a T1 intensity image. Format, reader and backend comparisons assess
+software interoperability, not tractography or connectivity ground truth.
+Computational reruns remain **one biological subject**. Counts are unweighted;
+no SIFT2 weights are applied.
+
+## ISMRM 2015 Ground-Truth Manifests
+
+When the ISMRM scoring data are unpacked, use the segmentation config to build
+one manifest per configured bundle/sub-bundle:
+
+```r
+research <- source("archive/load.R")$value
+
+data_root <- Sys.getenv("FIBRTRAQ_DATA_ROOT", unset = "/path/to/FibrTraQ-data")
+scoring <- file.path(data_root, "public-validation", "ismrm2015", "scoring")
+manifest_dir <- file.path(data_root, "public-validation", "ismrm2015", "manifests", "ground-truth")
+output_root <- file.path(data_root, "public-validation", "ismrm2015", "outputs", "ground-truth")
+
+generated <- research$ftq_make_ismrm2015_manifests(
+  scoring_dir = scoring,
+  output_dir = manifest_dir,
+  run_output_root = output_root,
+  force = TRUE
+)
+
+preflight <- research$ftq_run_validation_suite(manifest_dir, preflight_only = TRUE)
+results <- research$ftq_run_validation_suite(
+  manifest_dir,
+  output_csv = file.path(output_root, "ismrm2015-ground-truth-validation-summary.csv"),
+  overwrite = TRUE
+)
+```
+
+Each generated manifest uses the public ground-truth `.trk` file for one bundle,
+the configured head endpoint as the focal ROI, the configured tail endpoint as
+the target ROI, and `t1.nii.gz` as the anatomical report background when present.
+
+## dTOR-985 Exploratory Utility Test
+
+dTOR-985 is the recommended high-impact utility demonstration because it is a
+large normative, whole-brain MNI-space tractogram. Instead of asking whether one
+known bundle reaches one known endpoint, this test asks a more realistic
+exploratory question: from a focal left thalamus ROI, which cortical and
+subcortical Harvard-Oxford targets are most represented at each focal voxel,
+where connectivity is diverse, and where streamlines leave the focal ROI
+without reaching an atlas target?
+
+Prepare the Figshare metadata/download target:
+
+```bash
+Rscript archive/scripts/fibrtraq-dtor985-download.R \
+  /path/to/FibrTraQ-data/public-validation/dtor985 \
+  --download
+```
+
+Prepare the Harvard-Oxford masks and manifests with a Python environment that
+has `nilearn` and `nibabel` installed:
+
+```bash
+python archive/scripts/fibrtraq-dtor985-prepare.py \
+  --data-root /path/to/FibrTraQ-data \
+  --force
+```
+
+Then run preflight and a pilot from RStudio:
+
+```r
+research <- source("archive/load.R")$value
+
+data_root <- Sys.getenv("FIBRTRAQ_DATA_ROOT", unset = "/path/to/FibrTraQ-data")
+dtor_root <- file.path(data_root, "public-validation", "dtor985")
+pilot_manifest <- file.path(dtor_root, "manifests", "dtor985-left-thalamus-harvardoxford-pilot.json")
+full_manifest <- file.path(dtor_root, "manifests", "dtor985-left-thalamus-harvardoxford-full.json")
+
+research$ftq_preflight(pilot_manifest)
+pilot <- research$ftq_run(pilot_manifest, overwrite = TRUE)
+
+research$ftq_preflight(full_manifest)
+full <- research$ftq_run(full_manifest, overwrite = TRUE)
+
+explore <- research$ftq_exploratory_report(
+  result_csv = full$outputs$result_csv,
+  output_dir = file.path(dtor_root, "outputs", "harvard-oxford-left-thalamus", "exploratory-report"),
+  template_image = full$manifest$fnode,
+  background_image = full$manifest$background_image,
+  prefix = "sub-dtor985_desc-left-thalamus-harvardoxford"
+)
+explore$html
+```
+
+The pilot manifest is for coordinate/report QC. The full manifest is the exact
+many-target analysis; the exploratory report converts that full result into
+primary-target, target-diversity, entropy, total-target-hit, and
+leave-no-target maps.
+
+The dTOR `.trk` stores raw TrackVis points, not ROI-grid voxel indices. The
+generated manifests therefore use `track_space = "trackvis"` so FibrTraQ applies
+the `.trk` header affine before converting streamlines to Harvard-Oxford voxels.
+They also use `execution.track_reader = "stream"` so the full tractogram is read
+in chunks rather than materialized in memory. No additional `axis_flip` should be
+applied after this TrackVis transform.
+
+## Dataset Registry
+
+`public-datasets.yml` records each dataset's evidence status, source URLs,
+intended role, and practical setup notes. The manifests in `manifests/` are
+templates; they are not expected to pass until copied and edited to point at
+local downloaded data, and they are not completed evidence by themselves.

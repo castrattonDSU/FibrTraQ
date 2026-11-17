@@ -14,7 +14,7 @@
 #' @examples
 #' # roi_coords <- iso_coords(my_roi)  # any nonzero voxels
 #' # roi_coords <- iso_coords(my_roi, threshold = 0.5)  # numeric threshold
-#' @export
+#' @noRd
 iso_coords <- function(input_ROI, threshold = "nonzero") {
   # If coords already
   if (is.matrix(input_ROI) || is.data.frame(input_ROI)) {

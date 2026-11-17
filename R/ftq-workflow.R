@@ -2,7 +2,7 @@
 #'
 #' @param manifest Path to a JSON/YAML manifest, or an R list.
 #' @return A normalized manifest list.
-#' @export
+#' @noRd
 ftq_read_manifest <- function(manifest) {
   if (is.list(manifest)) {
     x <- manifest
@@ -172,7 +172,7 @@ ftq_read_manifest <- function(manifest) {
 #' @param write_maps Whether to write NIfTI map outputs.
 #' @param write_report Whether to build an HTML/PNG report.
 #' @param verbose Emit progress messages.
-#' @param backend Counting backend passed to [FibrTraQ()].
+#' @param backend Counting backend passed to `FibrTraQ()`.
 #' @param progress Emit main tractogram pass progress messages.
 #' @param progress_every Number of streamlines between progress messages.
 #' @param profile Attach backend stage timing information to the returned object.
@@ -180,9 +180,11 @@ ftq_read_manifest <- function(manifest) {
 #'   for report figures. NULL retains automatic slice selection.
 #' @param report_error_action Whether a report-generation error should stop the
 #'   call (the default) or return completed scientific outputs with report status.
+#' @param .report_path Optional final HTML path used when assembling a study report.
+#'   When supplied, the report markup is returned for assembly.
 #' @return A list containing paths, result tables, validation, report outputs,
 #'   and an additive `endpoint` member when endpoint analysis is enabled.
-#' @export
+#' @noRd
 ftq_run <- function(manifest,
                     output_dir = NULL,
                     overwrite = NULL,
@@ -194,7 +196,8 @@ ftq_run <- function(manifest,
                     progress_every = 100000L,
                     profile = FALSE,
                     report_slices = NULL,
-                    report_error_action = c("stop", "return")) {
+                    report_error_action = c("stop", "return"),
+                    .report_path = NULL) {
   backend <- match.arg(backend)
   report_error_action <- match.arg(report_error_action)
   m <- ftq_read_manifest(manifest)
@@ -203,7 +206,7 @@ ftq_run <- function(manifest,
   if (!is.null(write_maps)) m$write_maps <- isTRUE(write_maps)
   if (!is.null(write_report)) m$write_report <- isTRUE(write_report)
 
-  ftq_check_windows_output_paths(ftq_manifest_output_paths(m), m$output_dir)
+  ftq_check_windows_output_paths(ftq_manifest_output_paths(m, .report_path), m$output_dir)
   preflight <- ftq_preflight(m, output_dir = m$output_dir, overwrite = m$overwrite)
   if (!isTRUE(preflight$passed)) {
     stop("FibrTraQ preflight failed:\n", paste(ftq_preflight_failures(preflight), collapse = "\n"))
@@ -334,7 +337,7 @@ ftq_run <- function(manifest,
       result_csv = outputs$result_csv,
       rsc_csv = outputs$rsc_csv,
       manifest = m,
-      output_dir = file.path(m$output_dir, "reports", m$prefix),
+      output_dir = m$output_dir,
       map_paths = outputs$map_paths,
       validation = validation,
       preflight = preflight,
@@ -344,8 +347,9 @@ ftq_run <- function(manifest,
       endpoint_penetration = outputs$endpoint_penetration_csv,
       endpoint_context = outputs$endpoint_context_csv,
       local_search_assignments = outputs$local_search_assignments_csv,
-      overwrite = TRUE,
-      report_slices = report_slices
+      overwrite = m$overwrite,
+      report_slices = report_slices,
+      .report_path = .report_path
     ), error = function(e) {
       report_error <<- conditionMessage(e)
       NULL
@@ -394,7 +398,7 @@ ftq_run <- function(manifest,
 #' @param overwrite Whether existing outputs are allowed.
 #' @param write_maps Whether map outputs are planned.
 #' @return A structured preflight result with blocking errors, warnings, and recommendations.
-#' @export
+#' @noRd
 ftq_preflight <- function(manifest,
                           output_dir = NULL,
                           overwrite = NULL,
@@ -508,12 +512,12 @@ ftq_preflight <- function(manifest,
   add("prefix_path_safe", "error", !grepl("[/\\\\]", m$prefix),
       paste("prefix =", m$prefix))
 
-  reserved <- c("fNode_Coords", "tracks", "local", "leave_no_target", "none", "cNode_Coords")
-  add("target_labels_not_reserved", "error", !any(m$target_labels %in% reserved),
-      paste(intersect(m$target_labels, reserved), collapse = ","))
-  map_names <- paste0("target-", ftq_sanitize_label(m$target_labels))
-  add("target_map_names_unique", "error", !anyDuplicated(map_names),
-      paste(map_names[duplicated(map_names)], collapse = ","))
+  reserved <- ftq_reserved_target_labels(m$target_labels)
+  add("target_labels_not_reserved", "error", !length(reserved),
+      if (length(reserved)) paste("Reserved target labels:", paste(reserved, collapse = ", ")) else "")
+  conflicts <- ftq_conflicting_output_labels(m$target_labels)
+  add("target_map_names_unique", "error", !length(conflicts),
+      if (length(conflicts)) paste("Conflicting target filenames for", paste(conflicts, collapse = ", ")) else "")
 
   add_path_check <- function(name, path, severity = "error") {
     add(paste0(name, "_exists"), severity, !is.null(path) && file.exists(path),
@@ -929,13 +933,13 @@ ftq_preflight <- function(manifest,
 #' @param prefix File prefix.
 #' @param target_labels Target column names.
 #' @param manifest Optional manifest list for metadata.
-#' @param preflight Optional preflight result from [ftq_preflight()].
+#' @param preflight Optional preflight result from `ftq_preflight()`.
 #' @param context Optional tractogram-derived context output from
-#'   [ftq_tractogram_context()].
+#'   `ftq_tractogram_context()`.
 #' @param write_maps Whether to write NIfTI maps.
 #' @param overwrite Whether existing core output files may be overwritten.
 #' @return A list of output paths.
-#' @export
+#' @noRd
 ftq_write_outputs <- function(result,
                               rsc,
                               template_image,
@@ -979,6 +983,7 @@ ftq_write_outputs <- function(result,
   validation_json <- planned$core$validation_json
 
   ftq_check_overwrite(unlist(planned$core, use.names = FALSE), overwrite)
+  dir.create(dirname(result_csv), recursive = TRUE, showWarnings = FALSE)
   utils::write.csv(result, result_csv, row.names = FALSE)
   utils::write.csv(rsc, rsc_csv, row.names = FALSE)
   fate <- ftq_fate_summary(result)
@@ -1099,7 +1104,7 @@ ftq_write_outputs <- function(result,
 #' @param local_search_assignments Optional local-search end-voxel assignment
 #'   CSV/data frame. When supplied, it is reconciled against the ROI summary.
 #' @return A validation result list.
-#' @export
+#' @noRd
 ftq_validate_run <- function(result_csv,
                              rsc_csv,
                              map_paths = NULL,
@@ -1239,15 +1244,15 @@ ftq_validate_run <- function(result_csv,
 #' @param manifest Optional manifest list.
 #' @param output_dir Report output directory.
 #' @param map_paths Optional named map path list.
-#' @param validation Optional validation result from [ftq_validate_run()].
-#' @param preflight Optional preflight result from [ftq_preflight()].
+#' @param validation Optional validation result from `ftq_validate_run()`.
+#' @param preflight Optional preflight result from `ftq_preflight()`.
 #' @param tractogram_context Optional tractogram-derived context output or
 #'   density image path used when no anatomical background is available.
 #' @param endpoint_summary Optional endpoint-summary CSV/data frame.
 #' @param endpoint_penetration Optional endpoint-penetration CSV/data frame.
 #' @param endpoint_context Optional endpoint-context CSV/data frame.
 #' @param local_search_assignments Optional local-search end-voxel assignment
-#'   CSV/data frame written by [ftq_write_outputs()]. When supplied, the report
+#'   CSV/data frame written by `ftq_write_outputs()`. When supplied, the report
 #'   summarizes end-to-node distances and partitions primary local-search
 #'   connections by whether the full voxelized path also enters the cNode.
 #' @param roi_summary Optional ROI-summary CSV/data frame. When supplied, the
@@ -1258,8 +1263,10 @@ ftq_validate_run <- function(result_csv,
 #' @param overwrite Whether existing report files may be overwritten.
 #' @param report_slices Optional distinct, positive one-based axial slice indices.
 #'   NULL uses manifest report.slices when supplied, otherwise automatic selection.
-#' @return A list of report paths.
-#' @export
+#' @param .report_path Optional final HTML path used when assembling a study report.
+#'   When supplied, the report markup is returned for assembly.
+#' @return A list of report paths and, during study assembly, the HTML markup.
+#' @noRd
 ftq_report <- function(result_csv,
                        rsc_csv,
                        manifest = NULL,
@@ -1274,7 +1281,8 @@ ftq_report <- function(result_csv,
                        endpoint_context = NULL,
                        local_search_assignments = NULL,
                        roi_summary = NULL,
-                       report_slices = NULL) {
+                       report_slices = NULL,
+                       .report_path = NULL) {
   manifest <- ftq_report_resolve_manifest(result_csv, manifest)
   result <- ftq_read_table(result_csv)
   rsc <- ftq_read_table(rsc_csv)
@@ -1351,14 +1359,14 @@ ftq_report <- function(result_csv,
   }
   manifest$report$slices <- report_slices
   report_paths <- ftq_report_output_paths(
-    output_dir, prefix, write_endpoint = TRUE, write_local_search = TRUE
+    output_dir, prefix, ftq_result_target_columns(result),
+    write_endpoint = !is.null(endpoint_summary), write_local_search = !is.null(local_search_assignments)
   )
-  report_html <- report_paths$html
-  if (!isTRUE(overwrite) && dir.exists(output_dir)) {
-    ftq_check_overwrite(list.files(output_dir, recursive = TRUE, full.names = TRUE), FALSE)
-  }
+  report_html <- ftq_value(.report_path, report_paths$html)
+  if (!is.null(.report_path)) report_paths$html <- NULL
+  ftq_check_overwrite(unlist(report_paths, use.names = FALSE), overwrite)
 
-  fig_dir <- file.path(output_dir, "report-figures")
+  fig_dir <- file.path(output_dir, "figures")
   table_dir <- file.path(output_dir, "tables")
   dir.create(fig_dir, recursive = TRUE, showWarnings = FALSE)
   dir.create(table_dir, recursive = TRUE, showWarnings = FALSE)
@@ -1378,10 +1386,6 @@ ftq_report <- function(result_csv,
     roi_summary = roi_summary_data
   )
   top_tables <- ftq_write_top_tables(result, table_dir, prefix)
-  voxel_exports <- ftq_report_write_voxel_exports(
-    result, output_dir, prefix, template_image = template_image, overwrite = overwrite
-  )
-  top_tables <- c(top_tables, voxel_exports$tables)
   top_tables$connection_summary <- report_paths$tables$connection_summary
   top_tables$fate_summary <- report_paths$tables$fate_summary
   utils::write.csv(connection_summary, top_tables$connection_summary, row.names = FALSE)
@@ -1446,8 +1450,7 @@ ftq_report <- function(result_csv,
       row.names = FALSE
     )
   }
-  figs <- report_paths$figures[c("fate", "rsc", "tracks", "spatial_tracks",
-                                "spatial_targets", "spatial_leave_no_target")]
+  figs <- report_paths$figures[c("fate", "rsc", "tracks")]
   if (!is.null(endpoint_data) && !isTRUE(endpoint_data$missing)) {
     figs$endpoint_classification <- report_paths$figures$endpoint_classification
     figs$endpoint_comparison <- report_paths$figures$endpoint_comparison
@@ -1469,10 +1472,10 @@ ftq_report <- function(result_csv,
   ftq_plot_fate_summary(result, figs$fate, fate = fate_summary)
   ftq_plot_rsc_summary(rsc, figs$rsc, connection_summary = connection_summary)
   ftq_plot_tracks_distribution(result, figs$tracks)
-  ftq_plot_spatial_bundle(
+  spatial_figures <- ftq_plot_spatial_bundle(
     result,
     map_paths,
-    figs,
+    report_paths$figures,
     background_image = manifest$background_image,
     tractogram_context = tractogram_context,
     context_source = ftq_value(manifest$context_source, "auto"),
@@ -1484,29 +1487,27 @@ ftq_report <- function(result_csv,
     display_quantile = 0.99,
     report_slices = report_slices
   )
-  if (length(voxel_exports$maps)) {
+  figs <- c(figs, spatial_figures)
+  voxel_exports <- ftq_report_write_voxel_exports(
+    result, output_dir, prefix, template_image = template_image, overwrite = overwrite
+  )
+  top_tables <- c(top_tables, voxel_exports$tables)
+  if (!is.null(voxel_exports$fraction_volume)) {
     figs$local_fraction <- report_paths$figures$local_fraction
-    arr <- RNifti::readNifti(voxel_exports$maps$local_fraction)
+    arr <- voxel_exports$fraction_volume$values
     bg <- ftq_report_background(manifest$background_image, tractogram_context,
                                dim(arr)[1:3], ftq_value(manifest$context_source, "auto"))
     ftq_plot_montage(arr, figs$local_fraction, "Local fraction", background = bg$image,
                      legend_label = "Local / assigned streamlines", context = TRUE,
                      background_label = bg$label, slices = report_slices,
-                     validity_mask = as.array(RNifti::readNifti(voxel_exports$maps$local_fraction_valid)) > 0)
+                     validity_mask = voxel_exports$fraction_volume$valid)
   }
   figs <- figs[file.exists(unlist(figs, use.names = FALSE))]
 
-  guide <- ftq_write_output_guide(output_dir)
-  source_paths <- list(per_voxel = result_csv, rsc = rsc_csv, roi_summary = roi_summary)
-  metadata_path <- NULL
-  if (is.character(result_csv) && length(result_csv) == 1L &&
-      grepl("_fibrtraq_per-voxel-hits\\.csv$", result_csv)) {
-    candidate <- sub("_fibrtraq_per-voxel-hits\\.csv$", "_fibrtraq_run-metadata.json", result_csv)
-    if (file.exists(candidate)) metadata_path <- candidate
-    candidate <- sub("_fibrtraq_per-voxel-hits\\.csv$", "_fibrtraq_validation.json", result_csv)
-    if (file.exists(candidate)) source_paths$validation <- candidate
-  }
-  ftq_write_html_report(
+  source_paths <- list(per_voxel = result_csv, rsc = rsc_csv, roi_summary = roi_summary,
+                       validation = ftq_result_sidecar(result_csv, "validation"))
+  metadata_path <- ftq_result_sidecar(result_csv, "run-metadata")
+  html_content <- ftq_write_html_report(
     report_html,
     result,
     rsc,
@@ -1521,12 +1522,12 @@ ftq_report <- function(result_csv,
     connection_summary = connection_summary,
     fate_summary = fate_summary,
     source_paths = source_paths,
-    map_paths = c(map_paths, voxel_exports$maps),
+    map_paths = map_paths,
     metadata_path = metadata_path,
-    guide = guide
+    write_file = is.null(.report_path)
   )
   list(html = report_html, figures = figs, tables = top_tables,
-       report_maps = voxel_exports$maps, guide = guide)
+       html_content = if (!is.null(.report_path)) html_content)
 }
 
 ftq_value <- function(...) {
@@ -1774,31 +1775,32 @@ ftq_planned_output_paths <- function(output_dir,
                                      write_maps = TRUE,
                                      write_endpoint = FALSE,
                                      write_local_search = FALSE) {
+  table_dir <- file.path(output_dir, "tables")
   core <- list(
-    result_csv = file.path(output_dir, paste0(prefix, "_fibrtraq_per-voxel-hits.csv")),
-    rsc_csv = file.path(output_dir, paste0(prefix, "_fibrtraq_rsc-summary.csv")),
-    fate_csv = file.path(output_dir, paste0(prefix, "_fibrtraq_fate-summary.csv")),
-    roi_summary_csv = file.path(output_dir, paste0(prefix, "_fibrtraq_roi-summary.csv")),
+    result_csv = file.path(table_dir, paste0(prefix, "_fibrtraq_per-voxel-hits.csv")),
+    rsc_csv = file.path(table_dir, paste0(prefix, "_fibrtraq_rsc-summary.csv")),
+    fate_csv = file.path(table_dir, paste0(prefix, "_fibrtraq_fate-summary.csv")),
+    roi_summary_csv = file.path(table_dir, paste0(prefix, "_fibrtraq_roi-summary.csv")),
     metadata_json = file.path(output_dir, paste0(prefix, "_fibrtraq_run-metadata.json")),
     validation_json = file.path(output_dir, paste0(prefix, "_fibrtraq_validation.json"))
   )
   if (isTRUE(write_endpoint)) {
     core$endpoint_summary_csv <- file.path(
-      output_dir,
+      table_dir,
       paste0(prefix, "_fibrtraq_endpoint-summary.csv")
     )
     core$endpoint_penetration_csv <- file.path(
-      output_dir,
+      table_dir,
       paste0(prefix, "_fibrtraq_endpoint-penetration.csv")
     )
     core$endpoint_context_csv <- file.path(
-      output_dir,
+      table_dir,
       paste0(prefix, "_fibrtraq_endpoint-context.csv")
     )
   }
   if (isTRUE(write_local_search)) {
     core$local_search_assignments_csv <- file.path(
-      output_dir,
+      table_dir,
       paste0(prefix, "_fibrtraq_local-search-assignments.csv")
     )
   }
@@ -1916,8 +1918,8 @@ ftq_preflight_grid_check <- function(reference_path,
         (affine_available && !isTRUE(affine_match))) {
       reason <- paste0(
         reason,
-        "; use ftq_make_union_mask() when multiple aligned regional masks are available, ",
-        "or ftq_regrid_mask() only when the source affine/header is trusted."
+        ". Supply images aligned to the same voxel grid and verify ",
+        "their alignment against the subject's anatomy."
       )
     }
     list(
@@ -2056,17 +2058,7 @@ ftq_roi_summary <- function(result) {
 ftq_prefix <- function(subject, session = NULL, desc) {
   parts <- c(subject, session)
   parts <- parts[!is.null(parts) & !is.na(parts) & nzchar(parts)]
-  paste0(paste(parts, collapse = "_"), "_desc-", desc)
-}
-
-ftq_preflight_manifest <- function(m) {
-  paths <- c(
-    m$fnode, m[["local"]], m$tractogram, m$target_paths,
-    m$endpoint_context_paths, m$ref_image, ftq_expected_paths(m$expected)
-  )
-  missing <- paths[!is.na(paths) & !file.exists(paths)]
-  if (length(missing)) stop("Input file(s) do not exist:\n", paste(missing, collapse = "\n"))
-  invisible(TRUE)
+  paste0(paste(ftq_sanitize_label(parts), collapse = "_"), "_desc-", ftq_sanitize_label(desc))
 }
 
 ftq_read_volume_data <- function(path) {
@@ -2251,7 +2243,10 @@ ftq_write_maps <- function(result, template_image, map_dir, prefix, target_label
     ftq_check_overwrite(out, overwrite)
     arr <- array(0, dim = dims)
     arr[cbind(coords[,1], coords[,2], coords[,3])] <- as.numeric(values[[nm]])
-    RNifti::writeNifti(arr, out, template = template, datatype = "float")
+    # Float32 represents every integer through 2^24. Retain exact counts in
+    # larger tractograms while preserving the ordinary maps' storage format.
+    datatype <- if (any(values[[nm]] > 2^24, na.rm = TRUE)) "double" else "float"
+    RNifti::writeNifti(arr, out, template = template, datatype = datatype)
     paths[[nm]] <- out
   }
   paths
@@ -2259,6 +2254,19 @@ ftq_write_maps <- function(result, template_image, map_dir, prefix, target_label
 
 ftq_sanitize_label <- function(x) {
   gsub("[^A-Za-z0-9._-]+", "-", x)
+}
+
+ftq_reserved_target_labels <- function(labels) {
+  columns <- c("fNode_Coords", "tracks", "local", "leave_no_target", "none", "cNode_Coords")
+  # Column names are case-sensitive; ranked-table filenames also need to be
+  # distinct from the built-in metric names on case-insensitive volumes.
+  keys <- tolower(ftq_sanitize_label(labels))
+  labels[labels %in% columns | keys %in% tolower(ftq_ranked_metrics())]
+}
+
+ftq_conflicting_output_labels <- function(labels) {
+  key <- tolower(ftq_sanitize_label(labels))
+  labels[duplicated(key) | duplicated(key, fromLast = TRUE)]
 }
 
 ftq_validate_maps <- function(result, map_paths) {
@@ -2531,7 +2539,7 @@ ftq_write_top_tables <- function(result, table_dir, prefix, n = NULL) {
   xyz[[derived_name]] <- xyz$tracks - xyz$local - xyz$leave_no_target
   target_cols <- view$columns$column[view$columns$role == "target"]
   out <- list()
-  metrics <- c("leave_no_target", target_cols)
+  metrics <- ftq_ranked_metrics(target_cols)
   for (metric in metrics) {
     ord <- order(-xyz[[metric]], xyz[[coord_names[1L]]],
                  xyz[[coord_names[2L]]], xyz[[coord_names[3L]]])
@@ -2699,7 +2707,8 @@ ftq_plot_spatial_bundle <- function(result,
                                     local_search_radius_mm = 2,
                                     display_quantile = 0.99,
                                     report_slices = NULL) {
-  if (is.null(map_paths) || !length(map_paths)) return(invisible(NULL))
+  plotted <- list()
+  if (!length(map_paths)) return(invisible(plotted))
   assignment_label <- ftq_report_assignment_label(
     target_intersection_mode,
     local_search_radius_mm
@@ -2719,6 +2728,7 @@ ftq_plot_spatial_bundle <- function(result,
       display_quantile = display_quantile,
       slices = report_slices
     )
+    plotted$spatial_tracks <- figs$spatial_tracks
   }
   if (!is.null(map_paths[["leave-no-target"]])) {
     arr <- RNifti::readNifti(map_paths[["leave-no-target"]], internal = FALSE)
@@ -2735,6 +2745,7 @@ ftq_plot_spatial_bundle <- function(result,
       display_quantile = display_quantile,
       slices = report_slices
     )
+    plotted$spatial_leave_no_target <- figs$spatial_leave_no_target
   }
   target_names <- grep("^target-", names(map_paths), value = TRUE)
   connection_names <- c(
@@ -2753,7 +2764,9 @@ ftq_plot_spatial_bundle <- function(result,
       display_quantile = display_quantile,
       slices = report_slices
     )
+    plotted$spatial_targets <- figs$spatial_targets
   }
+  invisible(plotted)
 }
 
 ftq_report_assignment_label <- function(target_intersection_mode,
@@ -3220,7 +3233,7 @@ ftq_write_html_report <- function(path,
                                   source_paths = NULL,
                                   map_paths = NULL,
                                   metadata_path = NULL,
-                                  guide = NULL) {
+                                  write_file = TRUE) {
   if (is.null(connection_summary)) {
     connection_summary <- ftq_report_connection_summary(result, rsc)
   }
@@ -3234,10 +3247,19 @@ ftq_write_html_report <- function(path,
     x <- gsub("'", "&#39;", x, fixed = TRUE)
     x
   }
-  table_html <- function(df) {
+  table_html <- function(df, first_column_links = NULL) {
     if (is.null(df) || !nrow(df)) return("<p class='note'>No rows available.</p>")
     header <- paste0("<tr>", paste0("<th>", esc(names(df)), "</th>", collapse = ""), "</tr>")
-    rows <- apply(df, 1, function(r) paste0("<tr>", paste0("<td>", esc(r), "</td>", collapse = ""), "</tr>"))
+    values <- as.matrix(df)
+    rows <- vapply(seq_len(nrow(values)), function(i) {
+      cells <- esc(values[i, ])
+      if (length(first_column_links) && !is.na(first_column_links[i])) {
+        cells[1L] <- paste0("<a href='", esc(first_column_links[i]), "' download ",
+                            "title='Download the count map for ", cells[1L], " (NIfTI)'>",
+                            cells[1L], "</a>")
+      }
+      paste0("<tr>", paste0("<td>", cells, "</td>", collapse = ""), "</tr>")
+    }, character(1L))
     paste0(
       "<div class='table-scroll' role='region' tabindex='0'>",
       "<table>", header, paste(rows, collapse = "\n"), "</table>",
@@ -3289,60 +3311,52 @@ ftq_write_html_report <- function(path,
   identity <- unlist(list(manifest$subject, manifest$focal_region), use.names = FALSE)
   identity <- identity[!is.na(identity) & nzchar(identity)]
   title <- if (length(identity)) paste("FibrTraQ:", paste(identity, collapse = " / ")) else "FibrTraQ Report"
+  qc_status <- character()
+  qc_notes <- character()
   preflight_html <- ""
   if (!is.null(preflight)) {
-    cls <- if (isTRUE(preflight$passed)) "pass" else "fail"
-    failed_warnings <- sum(!preflight$checks$passed & preflight$checks$severity %in% c("warning", "recommendation"))
+    checks <- preflight$checks
+    passed <- isTRUE(preflight$passed)
+    qc_status <- if (passed) "Input checks passed." else "Input checks failed."
+    findings <- checks[!checks$passed, , drop = FALSE]
+    overlaps <- grepl("^(focal_target_overlap|target_target_overlap):", findings$check)
+    if (any(overlaps)) {
+      qc_notes <- paste(sum(overlaps), if (sum(overlaps) == 1L) "mask overlap" else "mask overlaps",
+                        "found. Check the affected mask boundaries against your anatomy.")
+    }
+    other <- findings[!overlaps, , drop = FALSE]
+    if (NROW(other)) {
+      qc_notes <- c(qc_notes, paste0(gsub("_", " ", other$check, fixed = TRUE), ": ", other$detail))
+    }
     preflight_summary <- ftq_report_preflight_summary(preflight)
     preflight_html <- paste0(
-      "<h2>Preflight</h2><p class='", cls, "'>",
-      if (isTRUE(preflight$passed)) "PASS" else "FAIL",
-      if (failed_warnings > 0L) {
-        paste0(" <span class='warn'>(", failed_warnings, " non-blocking note(s))</span>")
-      } else {
-        ""
-      },
-      "</p>",
+      "<details><summary>Full preflight details (", NROW(checks), " checks)</summary>",
       if (any(preflight_summary$status != "PASS")) table_html(preflight_summary) else "",
-      "<details><summary>Full preflight details (", nrow(preflight$checks),
-      " checks)</summary>", table_html(preflight$checks), "</details>"
+      table_html(checks), "</details>"
     )
   }
   validation_html <- ""
   if (!is.null(validation)) {
-    cls <- if (isTRUE(validation$passed)) "pass" else "fail"
+    passed <- isTRUE(validation$passed)
     biological_status <- ftq_value(validation$biological_qc_status, "unavailable")
-    biological_class <- if (identical(biological_status, "pass")) "pass" else "warn"
-    biological_warnings <- ftq_value(validation$biological_qc_warnings, character())
-    warning_html <- if (length(biological_warnings)) {
-      paste0(
-        "<ul>",
-        paste0("<li>", esc(biological_warnings), "</li>", collapse = ""),
-        "</ul>"
-      )
-    } else {
-      ""
-    }
+    qc_status <- c(qc_status,
+                   if (passed) "Computational checks passed." else "Computational checks failed.",
+                   paste0("Anatomical endpoint QC: ", esc(biological_status), "."))
+    qc_notes <- c(qc_notes, validation$biological_qc_warnings)
     checks <- validation$checks
-    passed_checks <- if (is.null(checks)) 0L else sum(checks$passed)
     total_checks <- if (is.null(checks)) 0L else nrow(checks)
-    validation_html <- paste0(
-      "<h2>Validation</h2><p class='", cls, "'>",
-      passed_checks, " of ", total_checks,
-      " automated computational checks passed. Overall status: ",
-      if (isTRUE(validation$passed)) "PASS" else "FAIL",
-      ".</p><p><b>Biological QC:</b> <span class='",
-      biological_class, "'>", esc(toupper(biological_status)),
-      "</span></p>", warning_html,
-      if (total_checks > 0L) {
-        paste0(
-          "<details><summary>Full validation details (", total_checks,
-          " checks)</summary>", table_html(checks), "</details>"
-        )
-      } else {
-        ""
+    if (total_checks) {
+      failed_checks <- checks[!checks$passed, , drop = FALSE]
+      if (nrow(failed_checks)) {
+        qc_notes <- c(qc_notes, paste0(gsub("_", " ", failed_checks$check, fixed = TRUE),
+                                       ": ", failed_checks$detail))
       }
-    )
+      validation_html <- paste0(
+        "<details><summary>Full validation details (", total_checks, " checks)</summary>",
+        "<p>", sum(checks$passed), " of ", total_checks, " automated computational checks passed.</p>",
+        table_html(checks), "</details>"
+      )
+    }
   }
   target_assignment_mode <- ftq_value(
     manifest$target_intersection_mode,
@@ -3443,14 +3457,10 @@ ftq_write_html_report <- function(path,
     ""
   }
   assignment_html <- paste0(
-    "<h2>Primary Connection Definition</h2><div class='note'><b>",
+    "<details><summary>Primary connection definition</summary><p><b>",
     esc(assignment_label), ":</b> ", esc(assignment_explanation),
-    " Target-density and no-cNode maps use this same definition. The separate ",
-    "end-voxel audit below is sensitivity QC and does not replace the primary ",
-    "assignment method.</div><p><b>Focal voxel allocation:</b> ",
-    esc(ftq_value(manifest$focal_assignment_mode, "Not recorded")), "</p>",
-    if (!is.null(manifest$provenance_warning)) paste0("<p class='warn'>", esc(manifest$provenance_warning), "</p>") else "",
-    assignment_warning
+    " Target-density and no-cNode maps use this same definition.</p><p><b>Focal voxel allocation:</b> ",
+    esc(ftq_value(manifest$focal_assignment_mode, "Not recorded")), "</p></details>"
   )
   build_local_search_html <- function() {
     if (is.null(local_search_data)) return("")
@@ -3627,7 +3637,16 @@ ftq_write_html_report <- function(path,
       roi_summary = "ROI-level unique counts (CSV)", validation = "Validation record (JSON)")[names(source_paths)])
   map_links <- ftq_report_downloads(c(map_paths, list(context_density = context_image)), dirname(path),
     paste0(gsub("[-_]", " ", c(names(map_paths), "context density")), " (NIfTI)"))
-  guide_link <- ftq_report_downloads(list(guide), dirname(path), "Output guide: fields, units and interpretation")
+  target_map_note <- if (any(grepl("^target-", names(map_paths)))) {
+    allocation <- if (identical(manifest$focal_assignment_mode, "first_intersection")) {
+      "its first assigned focal voxel"
+    } else "each assigned focal voxel"
+    sampling <- switch(ftq_value(manifest$streamline_voxelization_mode, ""),
+                       sample_points = " from its stored streamline points",
+                       segment_interpolation = " from its interpolated streamline points", "")
+    paste0("<p>Each target map counts a streamline meeting the connection definition once in ",
+           allocation, sampling, ". Voxels outside the focal mask are zero.</p>")
+  }
 
   format_count <- function(x) {
     ifelse(is.finite(as.numeric(x)), format(as.numeric(x), big.mark = ",", trim = TRUE), "Unavailable")
@@ -3651,6 +3670,13 @@ ftq_write_html_report <- function(path,
     "Connected fNode voxels",
     "Focal voxels connected (%) - RSC"
   )
+  destination_links <- vapply(as.character(connection_summary$cNode), function(label) {
+    key <- paste0("target-", label)
+    if (label == "local" || !key %in% names(map_paths)) return(NA_character_)
+    nifti <- map_paths[[key]]
+    if (length(nifti) != 1L || is.na(nifti) || !file.exists(nifti)) return(NA_character_)
+    ftq_report_href(nifti, dirname(path))
+  }, character(1L))
   unique_connections_available <- any(is.finite(
     connection_summary$unique_streamline_connections
   ))
@@ -3675,7 +3701,7 @@ ftq_write_html_report <- function(path,
   }
   rsc_figure_html <- figure_if_present(
     "rsc",
-    "Regional streamline connectivity",
+    "RSC by destination",
     paste0(
       "RSC is the percentage of fNode voxels with at least one connection in ",
       "the indicated row. A focal voxel can contribute to several rows, so ",
@@ -3988,8 +4014,8 @@ ftq_write_html_report <- function(path,
     paste0(
       "<div class='note warn'><b>Legacy association-weighted fate:</b> an ",
       "ROI-summary table was not supplied, so a streamline can contribute once ",
-      "for every occupied fNode voxel. Rerun or call ftq_report() with ",
-      "roi_summary for unique-streamline publication counts.</div>"
+      "for every occupied fNode voxel. Rerun the original analysis with ",
+      "fibrtraq_single() or fibrtraq_study() to recover unique-streamline counts.</div>"
     )
   }
   voxel_count <- nrow(result)
@@ -4002,19 +4028,26 @@ ftq_write_html_report <- function(path,
       "Under first_intersection, zero assignments do not establish that no streamline traversed the voxel."
     } else "", "</p>"
   )
-  endpoint_warning <- ""
-  if (!is.null(endpoint_data) && !isTRUE(endpoint_data$missing)) {
+  if (!length(validation$biological_qc_warnings) && !is.null(endpoint_data) &&
+      !isTRUE(endpoint_data$missing)) {
     grid <- endpoint_data$context[endpoint_data$context$context_type == "reference_grid", , drop = FALSE]
     if (nrow(grid) && any(grid$endpoints_outside > 0 | grid$endpoints_nonfinite > 0, na.rm = TRUE)) {
-      endpoint_warning <- paste0("<p class='warn'>Endpoint coverage needs review: ",
+      qc_notes <- c(qc_notes, paste0("Endpoint coverage needs review: ",
         format_count(grid$endpoints_outside[1L]), " endpoints are outside the reference grid and ",
-        format_count(grid$endpoints_nonfinite[1L]), " are nonfinite. See Endpoint coverage in advanced QC.</p>")
+        format_count(grid$endpoints_nonfinite[1L]), " are nonfinite."))
     }
   }
+  qc_notes <- unique(c(qc_notes, manifest$provenance_warning))
+  qc_html <- paste0(
+    if (length(qc_status)) paste0("<p class='qc-status'>", paste(qc_status, collapse = " "), "</p>"),
+    if (length(qc_notes)) paste0("<ul class='qc-findings'>",
+                                paste0("<li>", esc(qc_notes), "</li>", collapse = ""), "</ul>"),
+    assignment_warning
+  )
   fraction_figure_html <- figure_if_present("local_fraction", "Local fraction",
     paste0("Local assigned streamlines divided by all assigned streamlines at each focal voxel (0 to 1). ",
       "Colored zero values are defined; voxels without assigned streamlines are uncolored and undefined. ",
-      "The CSV uses NA for undefined values. Read the NIfTI together with its validity mask. ",
+      "The CSV uses NA for undefined values. ",
       "Local refers to the supplied localROI, which may be a regional union."))
   html <- paste0(
     "<!doctype html><html><head><meta charset='utf-8'>",
@@ -4022,16 +4055,16 @@ ftq_write_html_report <- function(path,
     "<title>", esc(title), "</title>", css, "</head><body>",
     "<h1>", esc(title), "</h1>",
     "<!-- FIBRTRAQ_NAVIGATION --><!-- /FIBRTRAQ_NAVIGATION -->",
-    guide_link,
-    assignment_html,
-    endpoint_warning,
-    preflight_html, validation_html,
-    "<h2>RSC summary</h2><p>Total number of fNode voxels: ", format_count(nrow(result)),
-    ".</p>", connection_note,
-    table_html(connection_display), rsc_figure_html,
+    qc_html,
+    "<h2>RSC summary</h2><p>Total number of fNode voxels: ", format_count(nrow(result)), ".",
+    if (any(!is.na(destination_links))) " Select a linked destination to download its NIfTI count map.",
+    "</p>",
+    table_html(connection_display, destination_links),
+    "<details><summary>How to read the RSC table and chart</summary>",
+    connection_note, rsc_figure_html, "</details>",
     "<h2>Spatial Density Heatmaps</h2>", background_note,
     tracks_figure_html, target_figure_html, no_target_figure_html, fraction_figure_html,
-    "<details><summary>Download spatial maps (NIfTI)</summary>", map_links, "</details>",
+    "<details><summary>Download spatial maps (NIfTI)</summary>", target_map_note, map_links, "</details>",
     "<h2>Fate Summary</h2><p>Denominator: ",
     paste(unique(format_count(fate_summary$denominator_count)), collapse = ", "),
     if (unique_fate) " unique focal-intersecting streamlines." else " focal voxel-streamline associations.",
@@ -4044,8 +4077,9 @@ ftq_write_html_report <- function(path,
     "The column-role file preserves the meaning of coordinate and target fields.</p>", primary_tables,
     "<details><summary>Original results and advanced tables</summary>", original_links,
     "<p>Ranked CSVs include every focal voxel, including zero counts, sorted by the stated metric.</p>", links, "</details>",
-    manifest_html,
+    assignment_html, preflight_html, validation_html, manifest_html,
     "</body></html>"
   )
-  writeLines(html, path)
+  if (write_file) writeLines(html, path)
+  invisible(html)
 }

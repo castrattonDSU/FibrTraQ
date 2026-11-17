@@ -30,7 +30,7 @@
 #'
 #' @seealso \code{\link{iso_tracks}},
 #'   \code{freesurferformats::read.dti.trk()}
-#' @export
+#' @noRd
 as_track <- function(track) {
   # Case 1: already a list with the expected fields ---------------------------
   if (is.list(track) && !is.null(track$num_points) && !is.null(track$coords)) {

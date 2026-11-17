@@ -30,7 +30,7 @@ test_that("native TCK creates every report and matches equivalent TrackVis outpu
                    trk_stream = c("trk", "stream"))
   bundles <- lapply(names(variants), function(name) {
     variant <- variants[[name]]
-    ftq_run_files(
+    fibrtraq_single(
       tractogram = paths[[variant[[1L]]]], focal_mask = paths$focal,
       target_masks = paths$targets, output_dir = file.path(root, name),
       subject = "synthetic", focal_label = "focal",
@@ -62,7 +62,7 @@ test_that("native TCK creates every report and matches equivalent TrackVis outpu
     expect_equal(provenance$endpoint_analysis$reference_voxel_size_mm, expected_spacing)
   }
   reference <- bundles$tck_stream
-  run_dir <- function(bundle) dirname(bundle$index$result_csv)
+  run_dir <- function(bundle) dirname(dirname(bundle$index$result_csv))
   for (bundle in bundles[-1L]) {
     # Compare every exported scientific CSV, including both report tables and
     # endpoint audits, not only the top-level count table.
@@ -97,8 +97,8 @@ test_that("native TCK creates every report and matches equivalent TrackVis outpu
       expect_equal(as.numeric(actual), as.numeric(expected), info = path)
       expect_equal(RNifti::xform(actual), RNifti::xform(expected), info = path)
     }
-    expect_equal(tck_report_scene(bundle$index$interactive_3d_qc),
-                 tck_report_scene(reference$index$interactive_3d_qc),
+    expect_equal(ftq_test_viewer_scene(run_dir(bundle)),
+                 ftq_test_viewer_scene(run_dir(reference)),
                  tolerance = 1e-6)
   }
   metadata <- jsonlite::fromJSON(reference$index$metadata_json)
@@ -117,7 +117,7 @@ test_that("standalone TCK density and viewer enforce the declared world geometry
   skip_if_not_installed("RNifti")
   root <- tempfile("tck-standalone-reports-")
   paths <- tck_fixture_files(file.path(root, "inputs"))
-  context <- ftq_tractogram_context(
+  context <- ftq_build_tractogram_context(
     paths$tck, paths$focal, file.path(root, "context"),
     track_chunk_size = 2L, density_discretization = "round"
   )
@@ -127,7 +127,7 @@ test_that("standalone TCK density and viewer enforce the declared world geometry
   expect_equal(context$summary$mapping_error_streamlines, 0)
   expect_identical(context$metadata$selected_track_space, "world")
   expect_identical(context$metadata$axis_flip, rep(FALSE, 3L))
-  expect_error(ftq_tractogram_context(
+  expect_error(ftq_build_tractogram_context(
     paths$tck, paths$focal, file.path(root, "bad-context"),
     axis_flip = c(TRUE, FALSE, FALSE)
   ), "axis_flip")

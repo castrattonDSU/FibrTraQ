@@ -2,11 +2,11 @@ test_that("installed file workflow records endpoint and local assignment modes",
   skip_if_not_installed("RNifti")
   skip_if_not_installed("freesurferformats")
 
-  public_arguments <- names(formals(ftq_run_files))
+  public_arguments <- names(formals(fibrtraq_single))
   expect_true("assignment_mode" %in% public_arguments)
   expect_true("search_radius_mm" %in% public_arguments)
 
-  example <- ftq_example_data(verify = TRUE)
+  example <- ftq_test_example_files()
   params <- example$parameters
   modes <- data.frame(
     mode = c("endpoint_voxels", "local_search"),
@@ -14,7 +14,7 @@ test_that("installed file workflow records endpoint and local assignment modes",
     stringsAsFactors = FALSE
   )
   run_mode <- function(mode, radius_mm, output_dir) {
-    ftq_run_files(
+    fibrtraq_single(
       tractogram = example$tractogram,
       focal_mask = example$focal_mask,
       target_masks = example$target_masks,
