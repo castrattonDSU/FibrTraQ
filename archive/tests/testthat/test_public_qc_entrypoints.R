@@ -168,7 +168,8 @@ test_that("the archived dataset recipe builds its exploratory report with record
   expect_equal(provenance$local_search_radius_mm, 1.5)
   context <- attr(report$summary$provenance, "report_context")
   expect_identical(context$subject, "recipe-check")
-  expect_identical(context$metadata_path, full_run$outputs$metadata_json)
+  expect_identical(normalizePath(context$metadata_path, mustWork = TRUE),
+                   normalizePath(full_run$outputs$metadata_json, mustWork = TRUE))
   html <- paste(readLines(report$html, warn = FALSE), collapse = "\n")
   expect_match(html, "<b>Target assignment mode:</b> local_search", fixed = TRUE)
   expect_match(html, "<b>Local search radius (mm):</b> 1.5", fixed = TRUE)
