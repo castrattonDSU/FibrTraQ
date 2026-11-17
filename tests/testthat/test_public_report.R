@@ -413,7 +413,10 @@ test_that("a returned report failure preserves completed scientific files and va
   expect_identical(run$report_error, "injected presentation failure")
   expect_identical(captured_slices, c(1L, 2L))
   expect_true(run$validation$passed)
-  expect_true(all(c(run$outputs$metadata_json, run$outputs$validation_json) %in% names(captured_hashes)))
+  required_paths <- c(run$outputs$metadata_json, run$outputs$validation_json)
+  expect_length(required_paths, 2L)
+  expect_true(all(normalizePath(required_paths, mustWork = TRUE) %in%
+                    normalizePath(names(captured_hashes), mustWork = TRUE)))
   expect_true(length(captured_hashes) >= 9L)
   expect_identical(tools::md5sum(names(captured_hashes)), captured_hashes)
   expect_equal(FibrTraQ:::ftq_read_table(run$outputs$result_csv),
