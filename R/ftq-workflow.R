@@ -397,12 +397,15 @@ ftq_run <- function(manifest,
 #' @param output_dir Optional output directory override.
 #' @param overwrite Whether existing outputs are allowed.
 #' @param write_maps Whether map outputs are planned.
+#' @param trk_mapping_stream Optional openable TRK stream descriptor for a
+#'   check-only preview of the coordinate decision before counting.
 #' @return A structured preflight result with blocking errors, warnings, and recommendations.
 #' @noRd
 ftq_preflight <- function(manifest,
                           output_dir = NULL,
                           overwrite = NULL,
-                          write_maps = NULL) {
+                          write_maps = NULL,
+                          trk_mapping_stream = NULL) {
   m <- ftq_read_manifest(manifest)
   if (!is.null(output_dir)) m$output_dir <- output_dir
   if (!is.null(overwrite)) m$overwrite <- isTRUE(overwrite)
@@ -906,6 +909,22 @@ ftq_preflight <- function(manifest,
         )
       }
     }
+  }
+
+  if (!is.null(trk_mapping_stream) &&
+      !any(vapply(checks, function(x) x$severity == "error" && !x$passed, logical(1)))) {
+    # The normal file workflow uses these same volume data, nonzero masks,
+    # reference selection and discretization. Stop the engine after its
+    # coordinate decision so the guard cannot diverge between preview and run.
+    args <- list(fNode = fnode_read$data, localROI = local_mask,
+                 cNode_list = target_masks, cNode_labels = m$target_labels,
+                 all_tracks = trk_mapping_stream, track_space = m$track_space,
+                 ref_image = effective_ref_image, discretization = m$discretization,
+                 .mapping_only = TRUE)
+    if (!is.null(m$axis_flip)) args$axis_flip <- m$axis_flip
+    mapping <- tryCatch(do.call(FibrTraQ, args), error = identity)
+    add("trk_coordinate_mapping", "error", !inherits(mapping, "error"),
+        if (inherits(mapping, "error")) conditionMessage(mapping) else mapping)
   }
 
   checks_df <- if (length(checks)) do.call(rbind, checks) else data.frame(

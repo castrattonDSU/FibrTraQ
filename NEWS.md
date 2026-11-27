@@ -2,6 +2,12 @@
 
 ## Development version
 
+- For TrackVis inputs, `check_only = TRUE` now checks the same coordinate
+  decision used by the analysis. A proposed automatic axis reflection is
+  reported for the affected subject and focal region before counting. The
+  counting rule and the safeguard against unapproved reflections are unchanged.
+- The file workflows now stop before counting if `track_space = "trackvis"`
+  is selected and the TRK header lacks a usable coordinate transform.
 - Both workflows now use the focal mask as the local region by default.
   To reproduce the previous study default, set `local_masks = "union"`.
   This choice affects local and fate summaries.

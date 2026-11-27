@@ -35,7 +35,7 @@ ftq_orientation_guard_arguments <- function(fixture, backend = "r") {
   )
 }
 
-ftq_orientation_guard_write_trk <- function(path, tracks, dims) {
+ftq_orientation_guard_write_trk <- function(path, tracks, dims, affine = diag(4)) {
   con <- file(path, "wb")
   on.exit(close(con), add = TRUE)
   write_fixed <- function(text, n) {
@@ -52,7 +52,7 @@ ftq_orientation_guard_write_trk <- function(path, tracks, dims) {
   write_fixed("", 200L)
   writeBin(0L, con, size = 2L, endian = "little")
   write_fixed("", 200L)
-  writeBin(as.numeric(t(diag(4))), con, size = 4L, endian = "little")
+  writeBin(as.numeric(t(affine)), con, size = 4L, endian = "little")
   write_fixed("", 444L)
   write_fixed("RAS", 4L)
   write_fixed("", 4L)
@@ -159,6 +159,13 @@ test_that("file workflow blocks an unapproved reflection without scientific outp
     verbose = FALSE,
     progress = FALSE
   )
+  preview <- do.call(fibrtraq_single, c(args, list(check_only = TRUE)))
+  decision <- subset(preview$checks, check == "trk_coordinate_mapping")
+  expect_false(preview$passed)
+  expect_identical(decision$passed, FALSE)
+  expect_match(decision$detail, "first 4 streamlines in file order", fixed = TRUE)
+  expect_match(decision$detail, "No flip was applied", fixed = TRUE)
+  expect_false(dir.exists(rejected_output))
   expect_error(do.call(fibrtraq_single, args), "Automatic mapping would reflect")
   # A failed status/index is useful, but no count, map, or scientific report
   # may make the rejected orientation look like a completed analysis.
@@ -171,10 +178,18 @@ test_that("file workflow blocks an unapproved reflection without scientific outp
   failed_index <- utils::read.csv(file.path(rejected_output, "fibrtraq-run-index.csv"))
   expect_identical(failed_index$run_status, "failed")
   expect_match(failed_index$error, "Automatic mapping would reflect")
+  expect_match(failed_index$error, decision$detail, fixed = TRUE)
 
   args$output_dir <- file.path(root, "verified")
   args$track_space <- "voxelmm"
   args$axis_flip <- c(FALSE, FALSE, FALSE)
+  preview <- do.call(fibrtraq_single, c(args, list(check_only = TRUE)))
+  decision <- subset(preview$checks, check == "trk_coordinate_mapping")
+  expect_true(preview$passed)
+  expect_identical(decision$passed, TRUE)
+  expect_match(decision$detail, "axis_flip = c(FALSE, FALSE, FALSE)", fixed = TRUE)
+  expect_match(decision$detail, "explicitly supplied", fixed = TRUE)
+  expect_false(dir.exists(args$output_dir))
   result <- do.call(fibrtraq_single, args)
   run <- result$index[1L, , drop = FALSE]
   expect_identical(run$run_status, "completed")
@@ -194,4 +209,82 @@ test_that("file workflow blocks an unapproved reflection without scientific outp
   expect_true(all(file.exists(c(run$primary_report, run$exploratory_report,
                                run$interactive_3d_qc))))
   expect_identical(tools::md5sum(names(input_checksums)), input_checksums)
+
+  # Same inputs, two different per-subject settings. Even with a requested
+  # in-memory reader, the preview must read only the mapping sample.
+  study_dir <- file.path(root, "cohort")
+  masks <- c(focal = focal_path, target = target_path)
+  read_tractogram <- FibrTraQ:::ftq_read_tractogram
+  iterate_trk <- FibrTraQ:::ftq_trk_stream_iterate
+  sample_limits <- integer()
+  testthat::local_mocked_bindings(
+    ftq_read_tractogram = function(path, reader, ...) {
+      if (reader != "stream") stop("Unexpected in-memory tractogram load")
+      read_tractogram(path, reader, ...)
+    },
+    ftq_trk_stream_iterate = function(stream, callback, max_tracks = Inf, chunk_size = NULL) {
+      sample_limits <<- c(sample_limits, max_tracks)
+      if (max_tracks > 200L) stop("Unexpected full tractogram pass")
+      iterate_trk(stream, callback, max_tracks, chunk_size)
+    },
+    .package = "FibrTraQ"
+  )
+  preview <- fibrtraq_study(
+    tractograms = c(automatic = trk_path, verified = trk_path),
+    region_masks = list(automatic = masks, verified = masks),
+    focal_regions = "focal", output_dir = study_dir, track_reader = "memory",
+    track_space = "voxelmm", axis_flip = list(automatic = NULL, verified = rep(FALSE, 3)),
+    check_only = TRUE, verbose = FALSE
+  )
+  expect_identical(preview$index$subject, c("automatic", "verified"))
+  expect_identical(preview$index$passed, c(FALSE, TRUE))
+  expect_identical(subset(preview$checks, check == "trk_coordinate_mapping")$passed,
+                   c(FALSE, TRUE))
+  expect_identical(sample_limits, c(200L, 200L))
+  expect_false(dir.exists(study_dir))
+})
+
+test_that("a missing or invalid TrackVis affine cannot produce a passing preview or zero counts", {
+  root <- tempfile("ftq-")
+  dir.create(root)
+  on.exit(unlink(root, recursive = TRUE, force = TRUE), add = TRUE)
+  fixture <- ftq_orientation_guard_fixture()
+  affine <- diag(4)
+  affine[4, 4] <- 0
+  trk <- file.path(root, "absent-affine.trk")
+  ftq_orientation_guard_write_trk(trk, fixture$tracks, dim(fixture$focal), affine)
+  focal <- file.path(root, "focal.nii")
+  target <- file.path(root, "target.nii")
+  RNifti::writeNifti(fixture$focal, focal)
+  RNifti::writeNifti(fixture$target, target, template = focal)
+  output <- file.path(root, "out")
+  preview <- fibrtraq_single(
+    trk, focal, c(target = target), output_dir = output, reference_image = focal,
+    track_space = "trackvis", axis_flip = rep(FALSE, 3), check_only = TRUE,
+    verbose = FALSE
+  )
+  decision <- subset(preview$checks, check == "trk_coordinate_mapping")
+  expect_identical(decision$passed, FALSE)
+  expect_match(decision$detail, "requires a valid TrackVis header affine")
+  expect_false(preview$passed)
+  expect_false(dir.exists(output))
+
+  args <- ftq_orientation_guard_arguments(fixture)
+  args$axis_flip <- rep(FALSE, 3)
+  args$ref_image <- focal
+  args$all_tracks <- list(header = FibrTraQ:::ftq_read_trk_header(trk), tracks = fixture$tracks)
+  bad_affines <- list(affine, matrix(0, 4, 4), diag(c(0, 1, 1, 1)),
+                      diag(c(NaN, 1, 1, 1)), diag(c(Inf, 1, 1, 1)))
+  for (bad in bad_affines) {
+    args$all_tracks$header$vox2ras <- bad
+    args$track_space <- "trackvis"
+    for (engine in c("r", "cpp")) {
+      if (engine == "cpp" && !FibrTraQ:::ftq_compiled_backend_available()) next
+      args$backend <- engine
+      expect_error(do.call(FibrTraQ, args), "requires a valid TrackVis header affine")
+    }
+    expect_error(do.call(FibrTraQ, c(args, list(track_affine = bad))), "finite nonsingular")
+    args$track_space <- "voxelmm"
+    expect_equal(do.call(FibrTraQ, args)$target, 1L)
+  }
 })

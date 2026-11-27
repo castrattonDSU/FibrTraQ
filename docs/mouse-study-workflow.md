@@ -82,3 +82,37 @@ For a quick review, choose one destination and read its unique streamline count,
 
 To share the run, zip the directory printed under **Share this folder** and have the recipient extract it before opening the HTML. For another review run,
 choose a new `output_dir`; the script preserves previous results.
+
+## Orientation for the six harmonized controls
+
+For **S15, S16, S17, S1c, S22 and S23**, comparisons with the original diffusion
+b0 and T2 images support voxel-millimeter coordinates with no axis reflection
+for the audited tractograms and harmonized regional masks. Before applying
+those settings to a copy, verify its tractogram and mask checksums against
+the audited files. This matters especially for renamed tractograms: the
+audited S15 file is `dti2.trk` and the audited S1c file is `S1__B.trk`.
+Repeat the [spatial review](spatial-verification.md) for different exports or masks.
+
+For a single control, add `track_space = "voxelmm"` and
+`axis_flip = c(FALSE, FALSE, FALSE)` to the existing `fibrtraq_single()` call.
+Use a fresh output folder. These two arguments set only the coordinate mapping.
+Keep the full-streamline assignment and stored-point voxelization defaults for
+the standard analysis. The S1c recipe above uses a separate endpoint-search protocol.
+
+For all six together, follow the [README study sheet example](../README.md#run-a-study)
+and put only those six verified subjects in the sheet. With `sheet` and a fresh
+`results_dir` set as in that example, use the same mapping for the check and run:
+
+```r
+checked <- fibrtraq_study(
+  study_sheet = sheet, focal_regions = "cerebellum", output_dir = results_dir,
+  track_space = "voxelmm", axis_flip = c(FALSE, FALSE, FALSE), check_only = TRUE
+)
+print(checked$index)
+stopifnot(checked$passed)
+
+study <- fibrtraq_study(
+  study_sheet = sheet, focal_regions = "cerebellum", output_dir = results_dir,
+  track_space = "voxelmm", axis_flip = c(FALSE, FALSE, FALSE), open = TRUE
+)
+```

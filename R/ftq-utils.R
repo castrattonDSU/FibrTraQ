@@ -145,19 +145,29 @@ ftq_trackvis_affine <- function(header) {
 
   voxel_order <- toupper(gsub("[^A-Za-z]", "", as.character(voxel_order)[1]))
   voxel_order <- substr(voxel_order, 1L, 3L)
+  if (is.na(voxel_order)) return(NULL)
   if (nchar(voxel_order) != 3L) return(vox2ras)
+
+  if (any(!is.finite(c(voxel_size, dims))) || any(c(voxel_size, dims) <= 0)) {
+    return(NULL)
+  }
+  codes <- strsplit(voxel_order, "", fixed = TRUE)[[1]]
+  if (!all(codes %in% c("R", "L", "A", "P", "S", "I"))) return(NULL)
+  start_ornt <- ftq_axcodes_to_ornt(codes)
+  if (anyDuplicated(start_ornt[, 1L])) return(NULL)
 
   scale <- diag(4)
   scale[cbind(1:3, 1:3)] <- 1 / as.numeric(voxel_size)
   offset <- diag(4)
   offset[1:3, 4] <- -0.5
 
-  start_ornt <- ftq_axcodes_to_ornt(strsplit(voxel_order, "", fixed = TRUE)[[1]])
   end_ornt <- ftq_affine_ornt(vox2ras)
+  if (anyDuplicated(end_ornt[, 1L])) return(NULL)
   orient <- ftq_ornt_transform(start_ornt, end_ornt)
   orient_aff <- ftq_inv_ornt_aff(orient, as.numeric(dims))
 
-  vox2ras %*% orient_aff %*% offset %*% scale
+  affine <- vox2ras %*% orient_aff %*% offset %*% scale
+  if (ftq_valid_trackvis_affine(affine)) affine else NULL
 }
 
 ftq_trackvis_voxel_size <- function(header) {
@@ -224,9 +234,15 @@ ftq_header_matrix <- function(header, names) {
   value <- ftq_header_value(header, names)
   if (is.null(value)) return(NULL)
   value <- as.matrix(value)
-  if (!identical(dim(value), c(4L, 4L)) || anyNA(value)) return(NULL)
-  storage.mode(value) <- "numeric"
+  if (!ftq_valid_trackvis_affine(value)) return(NULL)
   value
+}
+
+ftq_valid_trackvis_affine <- function(affine) {
+  # A zero bottom-right entry marks an unrecorded vox_to_ras in TrackVis.
+  is.numeric(affine) && identical(dim(affine), c(4L, 4L)) &&
+    all(is.finite(affine)) && all(affine[4L, ] == c(0, 0, 0, 1)) &&
+    qr(affine[1:3, 1:3])$rank == 3L
 }
 
 ftq_axcodes_to_ornt <- function(codes) {

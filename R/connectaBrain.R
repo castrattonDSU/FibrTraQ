@@ -171,7 +171,8 @@ FibrTraQ <- function(fNode,
                        "endpoint_voxels",
                        "local_search"
                      ),
-                     search_radius_mm = 2) {
+                     search_radius_mm = 2,
+                     .mapping_only = FALSE) {
 
   track_space <- match.arg(track_space)
 	  backend <- match.arg(backend)
@@ -384,16 +385,18 @@ FibrTraQ <- function(fNode,
   if (is.null(ref_use)) ref_use <- fNode
   if (!is.null(track_affine)) {
     track_affine <- as.matrix(track_affine)
-    if (!identical(dim(track_affine), c(4L, 4L)) || anyNA(track_affine)) {
-      stop("track_affine must be a numeric 4x4 matrix.")
+    if (!ftq_valid_trackvis_affine(track_affine)) {
+      stop("track_affine must be a finite nonsingular 4x4 affine with last row c(0, 0, 0, 1).")
     }
-    storage.mode(track_affine) <- "numeric"
   }
   if (!is.null(track_voxel_size)) {
     track_voxel_size <- ftq_validate_track_voxel_size(track_voxel_size)
   }
   if (identical(track_space, "voxelmm") && is.null(track_voxel_size)) {
     stop("track_space = 'voxelmm' requires TrackVis header voxel sizes or track_voxel_size.")
+  }
+  if (identical(track_space, "trackvis") && is.null(track_affine)) {
+    stop("track_space = 'trackvis' requires a valid TrackVis header affine or an explicit track_affine.")
   }
   local_search_geometry <- if (identical(
     target_intersection_mode,
@@ -508,9 +511,6 @@ FibrTraQ <- function(fNode,
       return(ftq_world_mm_to_voxel(c0, ref_use))
     }
     if (sp == "trackvis") {
-      if (is.null(track_affine)) {
-        stop("track_space='trackvis' requires a TrackVis header or track_affine.")
-      }
       pts_mm <- cbind(c0, 1) %*% t(track_affine)
       return(ftq_world_mm_to_voxel(
         pts_mm[, 1:3, drop = FALSE],
@@ -685,14 +685,25 @@ FibrTraQ <- function(fNode,
       "Automatic mapping would reflect one or more axes ",
       "(track_space = '", space_used, "', axis_flip = c(",
       paste(as.logical(flip_used), collapse = ", "), ")). ",
-      "Analysis stopped before streamline counting. ",
-      "Sampled focal-mask overlap cannot establish anatomical alignment. ",
-      "Verify the tractogram and mask orientation against trusted geometry ",
-      "or anatomy, then rerun fibrtraq_single() or fibrtraq_study() with track_space ",
-      "and axis_flip explicitly set to the validated mapping. ",
+      "This candidate was proposed from focal-mask overlap among the first ",
+      length(sample_tracks), " streamlines in file order. No flip was applied. ",
+      "Analysis stopped before streamline counting. Sampled focal-mask overlap ",
+      "cannot establish anatomical alignment. Check the mapping against trusted ",
+      "geometry or anatomy and set track_space and axis_flip explicitly. ",
+      "If that evidence establishes an unreflected grid, use its verified ",
+      "track_space and axis_flip = c(FALSE, FALSE, FALSE). ",
       "For file workflows, use a new output directory.",
       call. = FALSE
     )
+  }
+
+  if (isTRUE(.mapping_only)) {
+    basis <- if (is.null(mapping_scores)) "Coordinates explicitly supplied." else {
+      paste0("Selected using the first ", length(sample_tracks), " streamlines in file order.")
+    }
+    return(paste0("track_space = '", space_used, "', axis_flip = c(",
+                  paste(flip_used, collapse = ", "), "). ", basis,
+                  " Verify anatomical alignment independently."))
   }
 
   if (isTRUE(verbose)) {
