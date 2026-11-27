@@ -146,10 +146,11 @@ focal-image array indexing, for report previews. \code{NULL} selects slices
 automatically. Every index must lie within each run's focal-image grid.}
 
 \item{check_only}{If \code{TRUE}, check the specified inputs and planned destination
-for every requested analysis. The check reads image data and tractogram headers and may
-prepare temporary reference images or union masks. Complete streamline
-decoding takes place during analysis. No results are written. Review
-anatomical alignment independently.}
+for every requested analysis. For a TRK file, the check previews the coordinate
+mapping used by the analysis. Automatic mapping examines up to the first 200
+streamlines. A proposed automatic reflection is a blocking error. The check may
+prepare temporary reference images or union masks. It writes no results.
+Verify anatomical alignment independently.}
 }
 \value{
 With \code{check_only = TRUE}, a list with \code{passed}, the per-analysis
