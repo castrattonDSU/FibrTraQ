@@ -86,10 +86,11 @@
 #' @param verbose Emit preparation and run messages.
 #' @param progress Emit streamline-counting progress messages.
 #' @param check_only If `TRUE`, check the specified inputs and planned destination
-#'   for every requested analysis. The check reads image data and tractogram headers and may
-#'   prepare temporary reference images or union masks. Complete streamline
-#'   decoding takes place during analysis. No results are written. Review
-#'   anatomical alignment independently.
+#'   for every requested analysis. For a TRK file, the check previews the coordinate
+#'   mapping used by the analysis. Automatic mapping examines up to the first 200
+#'   streamlines. A proposed automatic reflection is a blocking error. The check may
+#'   prepare temporary reference images or union masks. It writes no results.
+#'   Verify anatomical alignment independently.
 #' @param open Open the combined report after successful completion.
 #' @param assignment_mode Use `"full_streamline"` (default) for an intersection anywhere
 #'   along the streamline, `"endpoint_voxels"` for an unambiguous endpoint
@@ -354,10 +355,11 @@ fibrtraq_single <- function(
 #' @param verbose Emit study and run progress messages.
 #' @param progress Emit streamline-counting progress messages.
 #' @param check_only If `TRUE`, check the specified inputs and planned destination
-#'   for every requested analysis. The check reads image data and tractogram headers and may
-#'   prepare temporary reference images or union masks. Complete streamline
-#'   decoding takes place during analysis. No results are written. Review
-#'   anatomical alignment independently.
+#'   for every requested analysis. For a TRK file, the check previews the coordinate
+#'   mapping used by the analysis. Automatic mapping examines up to the first 200
+#'   streamlines. A proposed automatic reflection is a blocking error. The check may
+#'   prepare temporary reference images or union masks. It writes no results.
+#'   Verify anatomical alignment independently.
 #' @param open Open the combined report after successful completion.
 #' @param assignment_mode Use `"full_streamline"` (default) for an intersection anywhere
 #'   along the streamline, `"endpoint_voxels"` for an unambiguous endpoint

@@ -5,7 +5,7 @@ tractography export, masks or coordinate settings. A completed run and a
 computational-validation pass establish consistency of the calculated outputs;
 they do not establish anatomical alignment.
 
-The snippets below use the input variables from the
+The single-subject example below uses `subject_dir` from the
 [single-subject README example](../README.md#run-fibrtraq-on-a-single-subject).
 Use a new output directory for each review so earlier runs remain available.
 
@@ -60,28 +60,28 @@ that produces the preferred result.
 ## 4. Pin the supported mapping in the analysis
 
 For `.trk`, after the source geometry and independent review support a mapping, set both
-`track_space` and `axis_flip` explicitly in `fibrtraq_single()`. Supported spaces
+`track_space` and `axis_flip` explicitly in `fibrtraq_single()` or `fibrtraq_study()`. Supported spaces
 are `"voxel"`, `"voxelmm"`, `"vox10"`, `"world"` and `"trackvis"`; consult
 `?fibrtraq_single` for the mapping options. Axis-flip entries correspond to the three
 voxel-array axes and are not interchangeable with a viewer's display labels.
 
 For example, **only when your evidence establishes voxel-millimeter coordinates
-with no axis reflections**, use this replacement for the README's analysis
-call. It keeps the README's assignment and discretization settings:
+with no axis reflections**, the single-subject README call becomes:
 
 ```r
 analysis <- fibrtraq_single(
-  tractogram = file.path(trk_dir, "tractogram.trk"),
-  focal_mask = file.path(node_dir, "cerebellum.nii.gz"),
-  target_masks = targets,
-  reference_image = file.path(ref_dir, "reference.nii.gz"),
-  output_dir = output_dir,
-  subject = subject_id,
+  tractogram = file.path(subject_dir, "tractogram.trk"),
+  focal_mask = file.path(subject_dir, "cerebellum.nii.gz"),
+  target_masks = c(cerebrum = file.path(subject_dir, "cerebrum.nii.gz"),
+                   pontine = file.path(subject_dir, "pontine.nii.gz"),
+                   medullaspinal = file.path(subject_dir, "medullaspinal.nii.gz")),
+  reference_image = file.path(subject_dir, "reference.nii.gz"),
+  output_dir = file.path(dirname(subject_dir), "001-verified-results"),
+  subject = "001",
   focal_label = "cerebellum",
-  assignment_mode = "full_streamline",
-  discretization = "any",
   track_space = "voxelmm",
-  axis_flip = c(FALSE, FALSE, FALSE)
+  axis_flip = c(FALSE, FALSE, FALSE),
+  open = TRUE
 )
 ```
 
@@ -89,11 +89,14 @@ Record and pin `discretization` and the assignment/voxelization settings; they
 affect counts independently of orientation. Retain the settings justified by your
 analysis protocol rather than changing them to improve visual appearance.
 
-For `.trk`, when flips are omitted, FibrTraQ stops before counting if its preferred
-automatic candidate reflects an axis. The error identifies the candidate; it
-does not certify it. Explicit reflections remain supported when independently
-justified. An automatic unreflected choice or explicitly supplied wrong mapping
-can still run, so **no flips is not a universal correction**.
+With automatic TRK mapping, FibrTraQ scores candidate mappings on the first
+200 streamlines by default, or all records in a smaller file. Their positions
+and order can favor a reflection that puts more of the sample in the focal mask.
+If the preferred candidate would reflect an axis and `axis_flip` was omitted,
+the analysis stops before counting. The masks remain in their original orientation.
+Version `0.3.5.9003` also reports this condition in `check_only = TRUE` for
+each affected subject and focal region. Use independent anatomy to evaluate
+the proposed mapping, even when the check passes. [Harmonized mouse controls](mouse-study-workflow.md#orientation-for-the-six-harmonized-controls)
 
 For native `.tck`, use the same file workflow with the `.tck` filename and
 `track_space = "auto"` or `"world"`. Leave `axis_flip = NULL` or set all three

@@ -30,13 +30,16 @@ ftq_check_study_inputs <- function(inputs, focal_regions, output_dir, check_dest
     errors <- if (any(bad)) {
       failure(paste0("readable_file:", names(paths)[bad]), paste("Cannot read", paths[bad]))
     }
-    # Open the TRK header through the same reader and signature checks as counting.
-    # TCK headers are checked by ftq_preflight() for each coordinate reference.
+    # Use the same leading TRK records for each focal region, even when the
+    # full analysis will load the file into memory. Never load the full file here.
+    trk_stream <- NULL
     if (!bad[["tractogram"]] && grepl("[.]trk$", trk, ignore.case = TRUE)) {
-      header_error <- tryCatch({ftq_read_tractogram(trk, reader = "stream"); NULL},
-                               error = function(e) failure("trk_header_readable",
-                                                           paste(trk, conditionMessage(e))))
-      errors <- rbind(errors, header_error)
+      header <- tryCatch(ftq_read_tractogram(trk, reader = "stream"), error = identity)
+      if (inherits(header, "error")) {
+        errors <- rbind(errors, failure("trk_header_readable", paste(trk, conditionMessage(header))))
+      } else {
+        trk_stream <- header
+      }
     }
     prepared <- NULL
     if (!any(bad[names(prep_paths)])) {
@@ -58,7 +61,7 @@ ftq_check_study_inputs <- function(inputs, focal_regions, output_dir, check_dest
     for (focal in focal_regions) {
       checks <- if (!is.null(prepared)) tryCatch({
         manifest <- make_manifest(subject, focal, prepared)
-        ftq_preflight(manifest)$checks
+        ftq_preflight(manifest, trk_mapping_stream = trk_stream)$checks
       }, error = function(e) failure("run_preflight", conditionMessage(e)))
       checks <- rbind(errors, checks)
       run_error <- tryCatch(check_run_destination(subject, focal), error = output_error)

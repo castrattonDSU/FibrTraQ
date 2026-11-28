@@ -18,7 +18,7 @@ Inputs to the package are very lightweight, needing just a tractogram file (Trac
 
 ## Install
 
-Use R 4.0.0 or later. Install it with:
+Use R 4.0.0 or later. Install the GitHub version from R:
 
 ```r
 if (!requireNamespace("remotes", quietly = TRUE)) install.packages("remotes")
@@ -66,7 +66,7 @@ This will open a report.html that displays an RSC summary table, as well as samp
 
 To run FibrTraQ on local data, simply adjust the file paths from the code above. You can use any number of targets (cNodes). 
 
-To check these inputs first, add `check_only = TRUE` to the same call. The check reads inputs without counting streamlines or writing the results folder. Verify anatomical alignment separately. If you omit the reference image, the report can use a tractogram-density background. [Spatial verification](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/spatial-verification.md)
+To check these inputs first, add `check_only = TRUE` to the same call. The check reads inputs without counting streamlines or writing the results folder. Version `0.3.5.9003` adds a check of the automatic TRK mapping before counting streamlines or writing the results folder. `axis_flip = c(FALSE, FALSE, FALSE)` can be used to override this check in case of errors. We suggest verifying anatomical alignment separately, but caution that various viewing software can treat header data differently. If you omit the reference image, the report can use a tractogram-density background. [Spatial verification](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/spatial-verification.md)
 
 For MRtrix, supply the `.tck` filename in `tractogram`. Its world coordinates use the NIfTI affine. Keep `track_space = "auto"` or `"world"` and leave `axis_flip` unset. For TrackVis (`.trk`), verify the exporter's coordinate convention against the anatomy. [TCK input requirements](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/advanced-workflows.md#mrtrix-tck-inputs)
 
@@ -95,7 +95,7 @@ print(checked$index)
 stopifnot(checked$passed)
 ```
 
-If a check fails, inspect `checked$checks` for the affected subject and input, correct it and rerun the check. When the check passes and you have verified alignment, run the study:
+Read `checked$checks` for the subject, focal region and reason. A missing file needs a corrected path. If automatic TRK mapping proposes a reflection, verify the mapping for those inputs and supply the supported settings in both calls. Review any warnings even when `checked$passed` is `TRUE`. After checking alignment, run the study:
 
 ```r
 study <- fibrtraq_study(
@@ -135,7 +135,7 @@ Zip the entire **Share this folder** directory. The recipient should extract the
 | Symptom | What to check |
 |---|---|
 | Command missing in R | Restart R and check the loaded version and source revision with `packageDescription("FibrTraQ")`. |
-| `.trk` alignment would require flipping an axis | Verify the coordinate convention and alignment independently before explicitly setting `track_space` and `axis_flip`. |
+| Automatic TRK mapping proposes an axis flip | The first 200 streamlines (or fewer in a smaller file) gave a reflected mapping the best score. The run stopped before counting. Verify alignment before setting `track_space` and `axis_flip`. [Harmonized mouse controls](https://github.com/castrattonDSU/FibrTraQ/blob/main/docs/mouse-study-workflow.md#orientation-for-the-six-harmonized-controls) |
 | Input grids disagree or focal hits are absent | Check subject identity, mask content, voxel dimensions and NIfTI affines. A 4-D reference also requires one b-value per volume. |
 | File or report fails to open on Windows | Extract the complete folder into a short location such as `C:/FibrTraQ/run01`. |
 | Anatomical endpoint QC is unavailable | Supply trusted, same-grid binary endpoint-context masks to assess anatomical containment. |
